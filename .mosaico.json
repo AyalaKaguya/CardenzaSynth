@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "workspace": {
+    "projects_dir": "Devices",
+    "default_project": "Devices/Mosaico",
+    "init_template": "tools/mosaico-vibe/submodule/esp-mosaico-utils/mosaico-tools/templates/hello_world/mosaico-template.json",
+    "run_dir": ".codex-runs/mosaico"
+  },
+  "dependencies": {
+    "bsp": "tools/mosaico-vibe/submodule/esp-mosaico-bsp",
+    "esp_iris": "tools/mosaico-vibe/submodule/esp-mosaico-utils/ESP-Iris"
+  },
+  "build": { "runner": "builtin", "configdep": "auto" },
+  "devices": [
+    {
+      "id": "esp-mosaico",
+      "name": "ESP-Mosaico",
+      "target": "esp32s31",
+      "status": "supported",
+      "default": true,
+      "preview_target": true,
+      "recovery_usb_ids": [
+        { "vid": "0x303a", "pid": "0x0020", "product": "ESP32-S31" }
+      ]
+    }
+  ]
+}

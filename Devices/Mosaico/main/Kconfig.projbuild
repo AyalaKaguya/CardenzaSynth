@@ -1,0 +1,13 @@
+menu "Cardenza Mosaico minimal port"
+    config CARDENZA_MOSAICO_AUDIO_TEST
+        bool "Play a short synth/sequencer test once after boot"
+        default y
+        help
+            Uses the existing Juno track, MIDI routing, sequencer and RenderFrames
+            callback for a short C-E-G phrase, then stops. No keyboard driver is
+            installed and nothing is saved. Disable for a silent idle boot.
+    config CARDENZA_MOSAICO_TEST_VOLUME
+        int "Boot output volume (percent)"
+        range 0 100
+        default 20
+endmenu

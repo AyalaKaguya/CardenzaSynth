@@ -4,3 +4,6 @@
 [submodule "Devices/Cardenza/cardenza"]
 	path = Devices/Cardenza/CardenzaHAL
 	url = https://github.com/203-Systems/CardenzaHAL.git
+[submodule "tools/mosaico-vibe"]
+	path = tools/mosaico-vibe
+	url = https://github.com/esp-mosaico/esp-mosaico-vibe.git

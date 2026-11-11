@@ -1,0 +1,23 @@
+cmake_minimum_required(VERSION 3.20)
+get_filename_component(CARDENZA_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+set(MOSAICO_WORKSPACE_ROOT "${CARDENZA_ROOT}/tools/mosaico-vibe")
+set(MOSAICO_UTILS_ROOT "${MOSAICO_WORKSPACE_ROOT}/submodule/esp-mosaico-utils")
+set(MOSAICO_BSP_ROOT "${MOSAICO_WORKSPACE_ROOT}/submodule/esp-mosaico-bsp")
+
+if(NOT EXISTS "${MOSAICO_UTILS_ROOT}/esp-mosaico-vibe-mode/cmake/mosaico_idf_project.cmake")
+    message(FATAL_ERROR "Initialize tools/mosaico-vibe, then run git -C tools/mosaico-vibe submodule update --init submodule/esp-mosaico-utils submodule/esp-mosaico-bsp")
+endif()
+if(NOT SDKCONFIG)
+    set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig")
+endif()
+set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.application.defaults")
+set(COMPONENTS main)
+list(APPEND EXTRA_COMPONENT_DIRS "${MOSAICO_UTILS_ROOT}/esp-mosaico-vibe-mode/components/esp_mosaico_app_recovery")
+include("${CARDENZA_ROOT}/cmake/FirmwareVersion.cmake")
+cardenza_read_firmware_version("${CARDENZA_ROOT}" PROJECT_VER)
+include("${MOSAICO_UTILS_ROOT}/esp-mosaico-vibe-mode/cmake/mosaico_idf_project.cmake")
+project(CardenzaSynthMosaico)
+# IDF's project macro consumes PROJECT_VER and does not forward CMake VERSION.
+# The public bundle target reads PROJECT_VERSION after that macro returns.
+set(PROJECT_VERSION "${PROJECT_VER}")
+include("${MOSAICO_UTILS_ROOT}/mosaico-tools/cmake/system_update.cmake")

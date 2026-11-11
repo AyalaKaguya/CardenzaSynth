@@ -162,7 +162,9 @@ std::uint32_t GrooveApp::NowMs() const
 
 void GrooveApp::Setup(const std::vector<std::string>& args)
 {
-  (void)args;
+  // Explicit volatile hosts (the minimal Mosaico port) have no storage or keys.
+  // Keep the normal instrument screen reachable without dismissing a card prompt.
+  const bool volatileSession = std::find(args.begin(), args.end(), "--volatile-session") != args.end();
   if (initialized_) return;
   os::midi::Initialize();
   // What a computer plays over USB is not heard for now: the device is its microphone only (the user,
@@ -191,7 +193,7 @@ void GrooveApp::Setup(const std::vector<std::string>& args)
   }
   // Without a card nothing is kept: said in a notice that waits for ENTER or ESC, so it is still there
   // when the boot animation ends.
-  if (os::storage::CardMissingThisRun()) controller_.ShowNoCardNotice();
+  if (os::storage::CardMissingThisRun() && !volatileSession) controller_.ShowNoCardNotice();
   initialized_ = true;
 }
 

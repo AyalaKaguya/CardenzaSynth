@@ -54,6 +54,8 @@ logs/
 
 # ESP-IDF component manager downloads (dependencies.lock pins them) and Python caches
 Devices/Cardenza/managed_components/
+Devices/Mosaico/managed_components/
+Devices/Mosaico/sdkconfig
 __pycache__/
 
 # Local agent planning notes (project rules stay tracked)
