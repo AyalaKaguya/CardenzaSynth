@@ -64,6 +64,11 @@
 #endif
 
 namespace amy_embed {
+#if defined(ESP_PLATFORM)
+// New IDF/libstdc++ exposes the float classification overload in std only.
+// AMY's C header is embedded in this namespace and calls isnan unqualified.
+using std::isnan;
+#endif
 extern "C" {
 #include "amy.h"
 // AMY's voice table (patches.c): the first oscillator of every allocated voice.
@@ -1807,7 +1812,11 @@ constexpr std::int64_t kEventBlockMicros = std::numeric_limits<std::int64_t>::ma
 // How far the output is ahead of the speaker (the device queues six blocks), from how long each block
 // took to render: a heavy event goes only when the queue holds more than it takes, and a block that
 // renders in less than its length wins back the difference. The board only: elsewhere every event goes.
+#if defined(CARDENZA_AUDIO_QUEUE_FRAMES)
+constexpr float kOutputQueueMicros = 1000000.0f * static_cast<float>(CARDENZA_AUDIO_QUEUE_FRAMES) / static_cast<float>(kSampleRate);
+#else
 constexpr float kOutputQueueMicros = 6.0f * 1000000.0f * static_cast<float>(kAmyFramesPerBlock) / static_cast<float>(kSampleRate);
+#endif
 constexpr float kHeavyEventMicros = 25000.0f;
 float g_outputAheadMicros = 0.0f;
 // Since when a heavy event has waited for the output to get ahead (render clock, 0 for none). While

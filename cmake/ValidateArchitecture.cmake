@@ -43,6 +43,9 @@ file(GLOB_RECURSE cardenza_own_sources
     "${CARDENZA_ROOT}/Library/Memory/*.h"
     "${CARDENZA_ROOT}/Devices/*.h" "${CARDENZA_ROOT}/Devices/Cardenza/*.cpp" "${CARDENZA_ROOT}/Devices/Cardenza/*.h")
 foreach(source IN LISTS cardenza_own_sources)
+    if(source MATCHES "/(managed_components|build|CMakeFiles)/")
+        continue()
+    endif()
     file(READ "${source}" source_text)
     string(FIND "${source_text}" "atomic_flag " flag_index)
     string(FIND "${source_text}" ".test_and_set(" test_index)
@@ -160,7 +163,8 @@ foreach(source_root "Devices" "OS" "Applications" "Library/Synth")
          "${CARDENZA_ROOT}/${source_root}/*.cpp" "${CARDENZA_ROOT}/${source_root}/*.h"
          "${CARDENZA_ROOT}/${source_root}/*.hpp")
     foreach(relative_path ${cardenza_persistence_sources})
-        if(relative_path MATCHES "^Devices/Cardenza/CardenzaHAL/")
+        if(relative_path MATCHES "^Devices/Cardenza/CardenzaHAL/" OR
+           relative_path MATCHES "(^|/)(managed_components|build|CMakeFiles)/")
             continue()
         endif()
         file(READ "${CARDENZA_ROOT}/${relative_path}" persistence_source)
