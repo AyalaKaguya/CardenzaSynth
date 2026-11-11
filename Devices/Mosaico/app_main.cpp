@@ -121,7 +121,8 @@ void RuntimeTask(void*)
     vTaskDelete(nullptr);
     return;
   }
-  Device::Audio::SetOutputVolume(CONFIG_CARDENZA_MOSAICO_TEST_VOLUME);
+  auto& application = *static_cast<apps::GrooveApp*>(os::system::ActiveApplication());
+  application.SetMasterVolume(CONFIG_CARDENZA_MOSAICO_TEST_VOLUME);
   mosaico::audio::SetMuted(false);
   LogHeap("after boot");
   ESP_LOGI(kTag, "system ready: original %dx%d UI at 1:1, 10ms ticks/20ms draw target; keyboard/storage not connected",

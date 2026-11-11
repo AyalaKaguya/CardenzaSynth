@@ -6,6 +6,7 @@
 #include <array>
 #include <atomic>
 #include <cinttypes>
+#include <cmath>
 #include <cstdint>
 #include <mutex>
 
@@ -37,6 +38,8 @@ DRAM_ATTR std::array<std::int16_t, kBlockFrames> g_mono{};
 DRAM_ATTR std::array<std::int16_t, kBlockFrames * 2> g_stereo{};
 std::atomic<device::SynthAudioRenderCallback> g_renderCallback{nullptr};
 std::atomic<std::uint8_t> g_outputVolume{Device::Audio::kDefaultOutputVolume};
+static_assert(Device::Audio::kDefaultOutputVolume == 100, "Initial output gain must match the device volume");
+std::atomic<std::int32_t> g_outputGain{kUnityGain};
 std::atomic<bool> g_muted{false};
 std::atomic<bool> g_outputReady{false};
 std::mutex g_startMutex;
@@ -88,8 +91,8 @@ bool OpenSpeaker(esp_codec_dev_handle_t speaker)
   int result = esp_codec_dev_open(speaker, &format);
   if (result == ESP_CODEC_DEV_OK)
   {
-    // Device volume is linear software scaling below, like the existing hosts.
-    // Unity codec volume avoids applying that same setting twice.
+    // The shared perceptual volume curve is applied in software below.
+    // Keep codec volume at unity so that attenuation is applied only once.
     result = esp_codec_dev_set_out_vol(speaker, 100);
     if (result == ESP_CODEC_DEV_OK) result = esp_codec_dev_set_out_mute(speaker, false);
   }
@@ -131,7 +134,7 @@ void RenderBlock()
 void PrepareStereo(std::int32_t& previousGain)
 {
   const std::int32_t target = g_muted.load(std::memory_order_relaxed) ? 0 :
-      (g_outputVolume.load(std::memory_order_relaxed) * kUnityGain + 50) / 100;
+      g_outputGain.load(std::memory_order_relaxed);
   for (std::size_t frame = 0; frame < kBlockFrames; ++frame)
   {
     const std::int32_t gain = previousGain + (target - previousGain) * static_cast<std::int32_t>(frame + 1) /
@@ -276,7 +279,22 @@ Diagnostics GetDiagnostics()
 
 namespace Device::Audio {
 
-void SetOutputVolume(std::uint8_t percent) { g_outputVolume.store((std::min)(percent, std::uint8_t{100}), std::memory_order_relaxed); }
+void SetOutputVolume(std::uint8_t percent)
+{
+  const std::uint8_t volume = (std::min)(percent, std::uint8_t{100});
+  std::int32_t gain = 0;
+  if (volume == 100) gain = kUnityGain;
+  else if (volume > 0)
+  {
+    // DeviceSettings' shared curve: -60 * (1 - v/100)^1.5 dB, with 0 muted.
+    // Calculate only when the setting changes; the audio task uses this Q15
+    // target and retains its one-block ramp without per-block transcendental math.
+    const float db = -60.0f * std::pow(1.0f - static_cast<float>(volume) / 100.0f, 1.5f);
+    gain = static_cast<std::int32_t>(std::lround(std::pow(10.0f, db / 20.0f) * static_cast<float>(kUnityGain)));
+  }
+  g_outputGain.store(gain, std::memory_order_relaxed);
+  g_outputVolume.store(volume, std::memory_order_relaxed);
+}
 std::uint8_t OutputVolume() { return g_outputVolume.load(std::memory_order_relaxed); }
 InputStreamInfo InputInfo() { return {}; }
 InputStatus StartInput() { return InputStatus::NotReady; }
