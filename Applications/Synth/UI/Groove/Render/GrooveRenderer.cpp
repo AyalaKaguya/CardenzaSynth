@@ -17,7 +17,8 @@ namespace {
 
 using namespace groove::theme;
 
-constexpr std::array<Color, 4> kStripColors{{kEsc, kTab, kFn, kCtrl}};
+// The left keys' colors, read through the palette in use.
+constexpr std::array<const Color*, 4> kStripColors{{&kEsc, &kTab, &kFn, &kCtrl}};
 const Rect kContentArea{kContentX - 2, kContentY - 2, kContentWidth + 4, kContentHeight + 4};
 
 Rect StripRect(std::size_t row)
@@ -58,7 +59,7 @@ void DrawStrips(Gfx& g, const Controller& controller, Animator& animator)
   for (std::size_t row = 0; row < 4; ++row)
   {
     const Rect cap = StripRect(row);
-    const Color color = kStripColors[row];
+    const Color color = *kStripColors[row];
     const auto& key = state.left[row];
     const float led = animator.LedShown(KeyIndex(row, 0));
     const bool solid = !key.down && StripSolid(led);
@@ -285,9 +286,9 @@ void DrawFooter(Gfx& g, const Controller& controller, Animator& animator)
     const auto seq = sequencer.BuildUiState(state.track);
     if (seq.hasHeldSteps)
     {
-      // Step inspector: lane chooser (ENTER) with a gliding highlight, scope and value.
-      static constexpr std::array<const char*, 4> kLanes{{"NOTE", "LEN", "VEL", "TIME"}};
-      std::array<int, 4> laneX{};
+      // Step inspector: lane chooser (ENTER) with a gliding highlight, and the notes or the value.
+      static constexpr std::array<const char*, 5> kLanes{{"NOTE", "LEN", "VEL", "TIME", "HITS"}};
+      std::array<int, kLanes.size()> laneX{};
       int x = kFooterX;
       for (std::size_t lane = 0; lane < kLanes.size(); ++lane)
       {
@@ -304,15 +305,13 @@ void DrawFooter(Gfx& g, const Controller& controller, Animator& animator)
         g.Text(laneX[index], kFooterY, kLanes[index], covered ? kBlack : kFaint);
       }
       std::string notes = seq.noteNames;
-      std::string scope = seq.scopeLabel;
       if (controller.HostView().EngineKind(state.track) == synth::SynthEngineKind::Drums)
       {
         notes = seq.primaryLowestNote >= 0 ? std::string(DrumName(seq.primaryLowestNote)) : std::string{};
         if (seq.noteCount > 1) notes += "+" + std::to_string(seq.noteCount - 1);
-        if (scope != "ALL" && seq.scopedNote >= 0 && !DrumName(seq.scopedNote).empty()) scope = std::string(DrumName(seq.scopedNote));
       }
       std::string detail = seq.valueLabel.empty() ? notes : seq.valueLabel;
-      if (seq.editLane == synth::SequencerEditLane::Note && !scope.empty()) detail = scope + " " + notes;
+      if (seq.editLane == synth::SequencerEditLane::Note) detail = notes;
       g.TextFit(x + 4, kFooterY, kFooterRight - x - 4, detail, kInk);
       return;
     }
@@ -363,7 +362,7 @@ Rect DropIn(const Rect& rect, float t, std::size_t order)
   return render::DropInTile(rect, t, order);
 }
 
-// One map tile. `current` is drawn inverse with crawling ants in the map's colour; a tile the key
+// One map tile. `current` is drawn inverse with crawling ants in the map's color; a tile the key
 // cannot use right now stays dotted.
 void MapTile(Gfx& g, const Rect& tile, bool current, bool usable, Color accent, std::uint32_t now, Color fill = kInk)
 {
@@ -621,7 +620,7 @@ void render::DrawBoot(Gfx& g, Animator& animator, const BootStyle& style)
     const float landed = fx::EaseOutBack(fx::Clamp01(t * 3.0f - 0.9f - static_cast<float>(index) * 0.18f));
     const int x = style.dashLeft + static_cast<int>(index) * style.dashPitch;
     const int y = style.dashY + static_cast<int>((1.0f - landed) * 20.0f);
-    if (landed > 0.0f) g.Dither(Rect{x, y, style.dashWidth, style.dashHeight}, kStripColors[index], 10);
+    if (landed > 0.0f) g.Dither(Rect{x, y, style.dashWidth, style.dashHeight}, *kStripColors[index], 10);
   }
   const int scan = static_cast<int>(fx::Clamp01(t * 1.4f) * static_cast<float>(style.bounds.height + 10));
   fx::ScanLine(g, style.bounds.x, style.bounds.width, style.bounds.y + scan, 8, kDim);
@@ -820,6 +819,7 @@ void render::DrawSessionSweep(Gfx& g, const Rect& bounds, const Controller& cont
     fx::Fade(g, Rect{bounds.x, y, bounds.width, std::max(0, bounds.y + bounds.height - y)}, 12);
     fx::ScanLine(g, bounds.x, bounds.width, y, 10, kInk);
   }
+
 }
 
 void render::DrawPanic(Gfx& g, const Rect& bounds, const Controller& controller, Animator& animator)
@@ -967,6 +967,7 @@ render::PageTabsLayout render::DrawPageTabs(Gfx& g, const Controller& controller
 
 void RenderFrame(Gfx& g, const Controller& controller, Animator& animator)
 {
+  theme::Use(controller.HostView().ScreenTheme());
   const std::uint32_t now = animator.Now();
   g.Clear(kBlack);
   const std::uint32_t sinceBoot = now - animator.BootAt();

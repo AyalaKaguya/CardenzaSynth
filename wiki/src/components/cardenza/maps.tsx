@@ -11,9 +11,9 @@ export function SceneMap() {
   const lang = useLang();
   const urls = useUrls();
   return (
-    <div className="cz-scene-map">
+    <div className="cz-scene-map-box"><div className="cz-scene-map">
       {SCENE_MAP.map(([title, section, items]) => (
-        <section key={title} className="scene-col">
+        <section key={title} className={title === 'HOLD' ? 'scene-col scene-row' : 'scene-col'}>
           <Link className="scene-title" to={urls.sectionPath(section)}>{title === 'HOLD' ? HOLD[lang] : title}</Link>
           {items.map(([label, sec, shot]) => (
             <Link key={label} className="scene-card" to={urls.sectionPath(sec)}>
@@ -23,6 +23,6 @@ export function SceneMap() {
           ))}
         </section>
       ))}
-    </div>
+    </div></div>
   );
 }

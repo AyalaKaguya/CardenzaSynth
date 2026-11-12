@@ -1,197 +1,22 @@
-#!/bin/bash
-# Remote flashing gate for the Mac that hosts the Cardenza board.
-#
-# Copy to /Users/mac/cardenza/gate.sh and make it the forced command of the build machine's key
-# in ~/.ssh/authorized_keys:
-#   restrict,command="/Users/mac/cardenza/gate.sh" ssh-ed25519 AAAA... ubuntu-desktop-to-macbook-20261022
-#
-# The key then can only run the commands below. Everything stays inside ROOT; the only outside
-# paths touched are the board's /dev/cu.usbmodem* serial ports.
-set -eo pipefail
+"""A Cardenza on this computer’s USB, from the command line: the host side of CardenzaHAL::USB and of
+this firmware’s app channel. Any firmware on CardenzaHAL answers list, command and console.
 
-ROOT=/Users/mac/cardenza
-FW_DIR="$ROOT/fw"
-VENV="$ROOT/.venv"
-ESPTOOL_VERSION=4.12.0
-MAX_UPLOAD_BYTES=$((32 * 1024 * 1024))
-MAX_LOG_SECONDS=120
-KEEP_BUILDS=5
-
-# Keep pip caches, Python temp files and any tool dotfiles inside ROOT.
-export HOME="$ROOT" TMPDIR="$ROOT/tmp" PIP_CACHE_DIR="$ROOT/tmp/pip-cache"
-mkdir -p "$FW_DIR" "$TMPDIR"
-cd "$ROOT"
-
-die() { echo "gate: $*" >&2; exit 1; }
-
-usage() {
-  cat >&2 <<'EOF'
-usage:
-  status                 esptool version, serial port, current build
-  setup                  create .venv with esptool
-  upload <id>            read a .tar.gz from stdin into fw/<id> and check SHA256SUMS
-  flash <id> [seconds]   write fw/<id> with esptool, then print the boot log
-  log [seconds]          print the serial log without resetting
-  reset [seconds]        hard-reset the board, then print the boot log
-  list                   uploaded builds, newest first
-  receive-status         file receiver capabilities (JSON)
-  receive-file <name64> <bytes> <sha256>  receive an ordinary file into inbox
-  stage-gate [bytes sha256]  stage a Bash script for owner review
-  usb-setup              add hidapi, sounddevice and numpy to .venv (MIDI uses CoreMIDI directly)
-  usb                    the board's USB functions (vendor ID 0x0203 only): HID, MIDI, audio
-  usb-command <name>     identify | reboot | launcher | download, over HID (SysEx if HID fails)
-  usb-stats              what the firmware has seen go through USB
-  usb-console [seconds]  the console of a board running USB firmware (it has no serial port)
-  usb-test               MIDI both ways, audio both ways, commands; ok / FAIL per check
-  usb-guide              CardenzaSynth's guide link over SysEx (the Learn page's way); ok / FAIL per check
-A board running USB firmware has no serial port: flash first asks it (usb-command download) to
-restart into the ROM download mode, and log reads usb-console instead.
-EOF
-  exit 1
-}
-
-check_id() { [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || die "bad build id '$1'"; }
-
-check_seconds() {
-  [[ $1 =~ ^[0-9]{1,3}$ ]] && (( $1 <= MAX_LOG_SECONDS )) || die "seconds must be 0-$MAX_LOG_SECONDS"
-}
-
-need_esptool() { [[ -x $VENV/bin/esptool.py ]] || die "esptool missing, run setup"; }
-
-find_port() {
-  local ports=() p
-  for p in /dev/cu.usbmodem*; do
-    [[ -e $p ]] && ports+=("$p")
-  done
-  case ${#ports[@]} in
-    0) die "no /dev/cu.usbmodem* port, is the board plugged in?" ;;
-    1) echo "${ports[0]}" ;;
-    *) die "more than one board port: ${ports[*]}" ;;
-  esac
-}
-
-# One serial user at a time.
-lock() {
-  mkdir "$ROOT/.lock" 2>/dev/null || die "busy, another flash or log is running"
-  trap 'rmdir "$ROOT/.lock"' EXIT
-}
-
-# Reads the port with DTR/RTS released so opening it does not reset the chip. The USB-Serial-JTAG
-# port drops out for a moment after a reset, so keep reopening until time runs out.
-serial_log() {
-  "$VENV/bin/python" - "$1" "$2" <<'EOF'
-import glob, sys, time
-import serial
-
-port, seconds = sys.argv[1], float(sys.argv[2])
-end = time.time() + seconds
-conn = None
-while time.time() < end:
-    if conn is None:
-        candidates = glob.glob("/dev/cu.usbmodem*")
-        if port not in candidates and len(candidates) == 1:
-            port = candidates[0]
-        try:
-            conn = serial.Serial()
-            conn.port, conn.baudrate, conn.timeout = port, 115200, 0.2
-            conn.dtr = conn.rts = False
-            conn.open()
-        except (serial.SerialException, OSError):
-            conn = None
-            time.sleep(0.2)
-            continue
-    try:
-        data = conn.read(4096)
-    except (serial.SerialException, OSError):
-        conn.close()
-        conn = None
-        continue
-    if data:
-        sys.stdout.buffer.write(data)
-        sys.stdout.flush()
-EOF
-}
-
-# The host side of CardenzaHAL::USB (tools/remote-flash/usb_tool.py in the CardenzaSynth repository,
-# copied in verbatim). It only talks to devices with 203 Systems' vendor ID or named Cardenza.
-usb_py() {
-  [[ -x $VENV/bin/python ]] || die "no .venv, run setup and usb-setup"
-  "$VENV/bin/python" -c '
-# >>> usb_runner.py
-"""Bound one USB worker independently of its Python threads and native libraries."""
-import contextlib
-import os
-import signal
-import subprocess
-import sys
-
-LIMITS = {"list": 30, "command": 20, "stats": 15, "test": 90, "guide": 30}
-GRACE_SECONDS = 1
-
-
-def run():
-    arguments = sys.argv[1:]
-    action = arguments[0] if arguments else ""
-    seconds = LIMITS.get(action, 30)
-    if action == "console" and len(arguments) == 2:
-        seconds = min(135, max(1, float(arguments[1]) + 15))
-    worker = None
-
-    def kill_group(kind):
-        if worker is not None:
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(worker.pid, kind)
-
-    def stop():
-        if worker is None:
-            return
-        kill_group(signal.SIGTERM)
-        try:
-            worker.wait(timeout=GRACE_SECONDS)
-        except subprocess.TimeoutExpired:
-            kill_group(signal.SIGKILL)
-            worker.wait(timeout=GRACE_SECONDS + 1)
-
-    def interrupted(number, _frame):
-        stop()
-        raise SystemExit(128 + number)
-
-    for kind in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
-        signal.signal(kind, interrupted)
-    try:
-        worker = subprocess.Popen(
-            [sys.executable, "-", *arguments],
-            stdin=sys.stdin,
-            start_new_session=True,
-        )
-        try:
-            code = worker.wait(timeout=seconds)
-            return code if code >= 0 else 128 - code
-        except subprocess.TimeoutExpired:
-            stop()
-            # A blocked terminal must not hold up releasing the Bash-owned device lock.
-            with contextlib.suppress(OSError):
-                os.set_blocking(2, False)
-                os.write(2, ("usb: hard timeout after %g s; last progress identifies the blocked step\n" % seconds).encode())
-            return 124
-    finally:
-        if worker is not None and worker.poll() is None:
-            stop()
-        # Also remove any descendants left by a worker that has already exited.
-        kill_group(signal.SIGKILL)
-
-
-if __name__ == "__main__":
-    raise SystemExit(run())
-# <<< usb_runner.py
-' "$@" <<'USBPY'
-# >>> usb_tool.py
-"""Host side of CardenzaHAL::USB for the remote gate (gate.sh embeds this file).
-
-Talks only to devices with 203 Systems' vendor ID: the HID system channel (report 0xCB), the firmware's
+Talks only to devices with 203 Systems’ vendor ID: the HID system channel (report 0xCB), the firmware’s
 app reports (0xFF), MIDI ports and audio devices whose name contains "Cardenza".
 
-usage: usb_tool.py list | command <identify|reboot|launcher|download> | stats | console <seconds> | test | guide
+usage: python3 tools/usb/cardenza_usb.py list | command <identify|reboot|launcher|download> | stats
+       | console <seconds> | test | guide
+
+  list      the Cardenza’s HID, MIDI and audio devices
+  command   restart it (reboot), into the 203 Launcher (launcher) or into ROM download mode for esptool
+            (download), or ask who it is (identify); over HID, else over MIDI SysEx F0 23 <code> F7
+  stats     what has gone through its USB MIDI and audio (this firmware)
+  console   its console and log for that many seconds, over HID
+  test      plays and records through its USB audio and checks the counts (this firmware)
+  guide     walks the Learn guide link (SysEx F0 23 7F) through a start, a lesson, a key and the end
+
+Needs: pip install hidapi (HID), sounddevice numpy (list audio, test). MIDI goes through macOS CoreMIDI
+(no package); elsewhere the MIDI parts report that and the HID parts still work.
 """
 
 import collections
@@ -288,7 +113,7 @@ class CoreMidi:
         self.proc = self.read_proc_type(self._read)  # kept alive as long as the port
         self._closed = False
         try:
-            with self._string("cardenza-gate") as name:
+            with self._string("cardenza-usb") as name:
                 self._check(cm.MIDIClientCreate(name, None, None, ctypes.byref(self.client)), "MIDIClientCreate")
             # CoreMIDI initializes property constants when its first client is created.
             self.name_property = vp.in_dll(cm, "kMIDIPropertyDisplayName").value
@@ -389,6 +214,8 @@ class CoreMidi:
 
 
 def midi():
+    if sys.platform != "darwin":
+        return None, "MIDI here only on macOS (CoreMIDI)"
     try:
         port = CoreMidi()
     except (OSError, AttributeError, ValueError) as error:
@@ -534,7 +361,7 @@ def list_all():
         for d in hid_devices():
             print("hid: %04x:%04x %s %s serial=%s interface=%s" % (d["vendor_id"], d["product_id"], d.get("manufacturer_string"), d.get("product_string"), d.get("serial_number"), d.get("interface_number")))
     except ImportError:
-        print("hid: hidapi not installed (usb-setup)")
+        print("hid: hidapi not installed (pip install hidapi)")
     port, error = midi()
     try:
         print("midi: %s" % ("out=%s in=%s" % (port.name(port.destination), port.name(port.source)) if port else error))
@@ -547,7 +374,7 @@ def list_all():
             if NAME in d["name"]:
                 print("audio: #%d %s in=%d out=%d rate=%d" % (index, d["name"], d["max_input_channels"], d["max_output_channels"], d["default_samplerate"]))
     except ImportError:
-        print("audio: sounddevice not installed (usb-setup)")
+        print("audio: sounddevice not installed (pip install sounddevice numpy)")
 
 
 def audio_device(direction):
@@ -570,7 +397,7 @@ def step(name):
 
 
 def watchdog(seconds):
-    """Ends the process (and with it the gate's lock) when an action runs too long, e.g. a USB audio
+    """Ends the process when an action runs too long, e.g. a USB audio
     stream that never starts, wherever it blocks."""
     def expire():
         print("usb: timed out after %d s during: %s" % (seconds, STEP), flush=True)
@@ -703,142 +530,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-# <<< usb_tool.py
-USBPY
-}
-
-board_port() {
-  local p
-  for p in /dev/cu.usbmodem*; do [[ -e $p ]] && return 0; done
-  return 1
-}
-
-# No serial port, but maybe USB firmware: ask it for the ROM download mode and wait for the port.
-usb_to_download() {
-  board_port && return 0
-  usb_py command download >/dev/null 2>&1 || return 0
-  local wait
-  for wait in $(seq 1 30); do
-    board_port && return 0
-    sleep 0.5
-  done
-}
-
-prune() {
-  ls -1t "$FW_DIR" | tail -n +$((KEEP_BUILDS + 1)) | while read -r old; do
-    rm -rf "${FW_DIR:?}/$old"
-  done
-}
-
-cmd_status() {
-  echo "root: $ROOT"
-  if [[ -x $VENV/bin/esptool.py ]]; then
-    echo "esptool: $("$VENV/bin/python" -c 'import esptool; print(esptool.__version__)')"
-  else
-    echo "esptool: not installed"
-  fi
-  ls /dev/cu.usbmodem* 2>/dev/null || echo "port: none"
-  [[ -f $ROOT/current ]] && echo "current: $(cat "$ROOT/current")"
-  return 0
-}
-
-cmd_setup() {
-  if [[ ! -x $VENV/bin/python ]]; then
-    /opt/homebrew/bin/python3 -m venv "$VENV"
-  fi
-  "$VENV/bin/python" -m pip install -q --disable-pip-version-check "esptool==$ESPTOOL_VERSION"
-  cmd_status
-}
-
-cmd_upload() {
-  local id=$1 tmp
-  check_id "$id"
-  [[ -e $FW_DIR/$id ]] && die "build $id already exists"
-  tmp=$(mktemp -d "$FW_DIR/.upload.XXXXXX")
-  # head caps the stream so a runaway upload cannot fill the disk; bsdtar refuses absolute
-  # paths, '..' and writes through symlinks by default.
-  if ! head -c "$MAX_UPLOAD_BYTES" | tar -xzf - -C "$tmp"; then
-    rm -rf "$tmp"
-    die "bad archive"
-  fi
-  if [[ ! -f $tmp/flash_args || ! -f $tmp/SHA256SUMS ]] \
-      || ! (cd "$tmp" && shasum -a 256 -c SHA256SUMS >/dev/null); then
-    rm -rf "$tmp"
-    die "archive incomplete or checksum mismatch"
-  fi
-  mv "$tmp" "$FW_DIR/$id"
-  prune
-  echo "uploaded $id"
-}
-
-cmd_flash() {
-  local id=$1 seconds=${2:-10} port
-  check_id "$id"
-  check_seconds "$seconds"
-  [[ -f $FW_DIR/$id/flash_args ]] || die "unknown build $id"
-  need_esptool
-  lock
-  usb_to_download
-  port=$(find_port)
-  (cd "$FW_DIR/$id" && "$VENV/bin/esptool.py" --chip esp32s3 -p "$port" -b 460800 \
-      --before default_reset --after hard_reset write_flash @flash_args)
-  echo "$id" > "$ROOT/current"
-  echo "--- boot log ($seconds s) ---"
-  serial_log "$port" "$seconds"
-}
-
-cmd_log() {
-  local seconds=${1:-10} port
-  check_seconds "$seconds"
-  need_esptool
-  lock
-  if ! board_port; then
-    usb_py console "$seconds"
-    return
-  fi
-  port=$(find_port)
-  serial_log "$port" "$seconds"
-}
-
-cmd_reset() {
-  local seconds=${1:-10} port
-  check_seconds "$seconds"
-  need_esptool
-  port=$(find_port)
-  lock
-  "$VENV/bin/esptool.py" --chip esp32s3 -p "$port" --before default_reset --after hard_reset chip_id >/dev/null
-  echo "--- boot log ($seconds s) ---"
-  serial_log "$port" "$seconds"
-}
-
-# Under the forced command the request arrives in SSH_ORIGINAL_COMMAND; read -a splits it on
-# whitespace without glob or variable expansion. A leading path to this script is ignored so the
-# same call works before and after the key is restricted.
-if [[ -n $SSH_ORIGINAL_COMMAND ]]; then
-  read -r -a ARGS <<< "$SSH_ORIGINAL_COMMAND"
-else
-  ARGS=("$@")
-fi
-[[ ${ARGS[0]} == */gate.sh || ${ARGS[0]} == gate.sh ]] && ARGS=("${ARGS[@]:1}")
-
-case ${ARGS[0]}:${#ARGS[@]} in
-  status:1) cmd_status ;;
-  receive-status:1) "$VENV/bin/python" "$ROOT/gate-receive.py" receive-status ;;
-  receive-file:4) "$VENV/bin/python" "$ROOT/gate-receive.py" receive-file "${ARGS[1]}" "${ARGS[2]}" "${ARGS[3]}" ;;
-  stage-gate:1) "$VENV/bin/python" "$ROOT/gate-receive.py" stage-gate ;;
-  stage-gate:3) "$VENV/bin/python" "$ROOT/gate-receive.py" stage-gate "${ARGS[1]}" "${ARGS[2]}" ;;
-  setup:1) cmd_setup ;;
-  list:1) ls -1t "$FW_DIR" ;;
-  upload:2) cmd_upload "${ARGS[1]}" ;;
-  flash:2 | flash:3) cmd_flash "${ARGS[1]}" "${ARGS[2]}" ;;
-  log:1 | log:2) cmd_log "${ARGS[1]}" ;;
-  reset:1 | reset:2) cmd_reset "${ARGS[1]}" ;;
-  usb-setup:1) lock; "$VENV/bin/python" -m pip install -q --disable-pip-version-check --only-binary=:all: hidapi sounddevice numpy && usb_py list ;;
-  usb:1) usb_py list ;;
-  usb-command:2) lock; usb_py command "${ARGS[1]}" ;;
-  usb-stats:1) lock; usb_py stats ;;
-  usb-console:1 | usb-console:2) check_seconds "${ARGS[1]:-10}"; lock; usb_py console "${ARGS[1]:-10}" ;;
-  usb-test:1) lock; usb_py test ;;
-  usb-guide:1) lock; usb_py guide ;;
-  *) usage ;;
-esac

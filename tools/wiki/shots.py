@@ -176,6 +176,9 @@ def shot_script():
     # A long pattern: SEQ menu LEN + twice (16 -> 48 steps), then ADD to its second page.
     s.scene(2).page(0)
     s.act("down fn", f"tap {grid_key(11)}", f"tap {grid_key(11)}", "up fn", "tap del").shot("seq-long", 30)
+    # A sound with edits asks before another one replaces it: CUTOFF on VCF, then ADD on VOICE.
+    s.scene(1).page(4).act(f"tap {grid_key(0)}", "tap del").wait(20)
+    s.page(0).act("tap del").shot("preset-confirm", 30).act("tap esc").wait(30)
     return "\n".join(s.lines) + "\n"
 
 

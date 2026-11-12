@@ -54,7 +54,7 @@ This reference defines paths, formats, ownership and compatibility. Code: `OS/St
 | Content | Format | Compatibility |
 |---|---|---|
 | `Settings/*.cfg` | ASCII text, `key=value` lines | Unknown keys survive a read / write cycle |
-| `Projects/*.ccproj`, `Session/autosave.ccproj` | Text beginning with `CARDENZA_PROJECT 7` | Reads v1–v7; writes v7 |
+| `Projects/*.ccproj`, `Session/autosave.ccproj` | Text beginning with `CARDENZA_PROJECT 7` | Reads v1–v8; writes v7 (v8 from the next test build) |
 | `Session/autosave.txt`, `Session/restoring.txt` | `key=value` lines | Written whole by the groovebox; other keys are not kept |
 | `Presets/<engine>/user.ccpreset` | Text beginning with `CARDENZA_PRESETS 1 "<engine-id>"` | Preset format 1 |
 | `Samples/*.wav`, `Session/take-*.wav` | Mono PCM16 WAV | File names and project references stay valid |
@@ -63,8 +63,12 @@ This reference defines paths, formats, ownership and compatibility. Code: `OS/St
 Storage protocol 2 describes the layout and how settings are kept; it does not version the project,
 preset or WAV formats. Project format 6 added the keyboard and each track's chord and arpeggiator;
 format 7 gives every pattern its own length (up to 256 steps). Version 5 was only written by
-unreleased development builds (its `PLAY` line is skipped). The next project format change takes
-version 8. The 0.1.0 release reads formats 1–6: a project saved by this firmware is format 7.
+unreleased development builds (its `PLAY` line is skipped). Format 8 adds HITS (a note fired 1–4
+times in its step): each `T` line gains the track's new-note hits after its new-note length, and every
+note line a seventh number, the note's hits. It is read already and written from the one format bump
+of the next test build (`kProjectWriteVersion`); until then projects are written as format 7 and keep
+no hits. Older formats read as one hit per note. The 0.1.0 release reads formats 1–6: a project saved
+by this firmware is format 7.
 
 ### Settings syntax
 
@@ -134,16 +138,18 @@ pending edits: for tests, not for a card coming back.
 | Key | Meaning |
 |---|---|
 | `protocol` | storage protocol version of the card: 2 |
-| `sys.volume` | output volume 0–100 (0 mute, 1–100 = about −20–0 dB, 50 = about −10.5 dB), default 50 |
-| `sys.volume.rev` | when this is below 2, `sys.volume` was saved before the output got louder (the 0.1.0 release's curve, for one) and goes back to the default, once |
+| `sys.volume` | output volume 0–100 by ear: 0 mutes, v is −60 (1 − v/100)^1.5 dB (about −59 dB at 1, −21 dB at 50, −10 dB at 70, 0 dB at 100; `Device::Audio::SetOutputVolume`), default 70 |
+| `sys.volume.rev` | the meaning `sys.volume` was saved under, now 3; below that the volume goes back to the default, once (2: the output got louder, the 0.1.0 release saved below it; 3: the 60 dB curve, 2026-11-06, which replaced a −20–0 dB scale) |
 | `sys.led` | key LED master brightness 0–15, default 15 |
 | `sys.screen` | screen backlight 10–255, default 180 |
 | `sys.log` | `1` writes the console log to `Logs/` (OS/System/Log.h), `0` stops it; default 1 |
+| `sys.theme` | the screen's colors: `dark` (light on black, the default), `light` (ink on white paper) or `retro` (a backlit green LCD), in any case; any other value reads as `dark` |
 | `boot.app` | last non-system app; started at boot when it is still registered |
 
-Volume, key LEDs, screen and the log are device settings: the OS applies them at boot and every app
-changes them only through `os::storage::SetOutputVolume / SetKeyLedBrightness / SetScreenBacklight /
-SetLogEnabled`. Projects never carry them.
+Volume, key LEDs, screen, the log and the theme are device settings: the OS applies them at boot
+(the theme is applied by the app that draws, from `os::storage::ScreenTheme`, before each frame) and
+every app changes them only through `os::storage::SetOutputVolume / SetKeyLedBrightness /
+SetScreenBacklight / SetLogEnabled / SetScreenTheme`. Projects never carry them.
 
 ### The log
 

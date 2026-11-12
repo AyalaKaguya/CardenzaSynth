@@ -1,7 +1,6 @@
 DEVICE ?= Cardenza
 IDF_TARGET ?= esp32s3
 PORT ?=
-REMOTE ?= macbook
 
 # Browser simulator (DEVICE=CardenzaWeb): Emscripten from $(EMSDK), page in $(WEB_BUILD)/site.
 EMSDK ?= $(HOME)/emsdk
@@ -40,7 +39,7 @@ endif
 IDF_PORT_ARG := $(if $(PORT),-p '$(PORT)',)
 CARDENZA_IDF_ARGS := -B '$(abspath $(BUILD))'
 
-.PHONY: all build stress run set-target flash remote-flash bootloader-flash app-flash erase monitor flash-monitor clean fullclean validate-architecture firmware firmware-target host cardenza cardenza-firmware cardenza-flash cardenza-monitor cardenza-flash-monitor cardenza-host cardenza-clean cardenza-fullclean web web-serve web-deploy learn hal-check hal-update
+.PHONY: all build stress run set-target flash bootloader-flash app-flash erase monitor flash-monitor clean fullclean validate-architecture firmware firmware-target host cardenza cardenza-firmware cardenza-flash cardenza-monitor cardenza-flash-monitor cardenza-host cardenza-clean cardenza-fullclean web web-serve web-deploy learn hal-check hal-update
 
 all: build
 
@@ -147,8 +146,9 @@ endif
 
 # The on-board stress test (Applications/Synth/StressTest.cpp): the
 # release configuration plus the task watchdog (a hang becomes a crash report with its backtrace) and
-# the task list for the test's stall watcher. Flash it with BUILD=build/Cardenza-stress
-# tools/remote-flash/push.sh and read the `stress:` lines of the log. Never ship this build.
+# the task list for the test's stall watcher. Flash it from its build folder (cd build/Cardenza-stress &&
+# esptool.py --chip esp32s3 -p <port> write_flash @flash_args) and read the `stress:` lines of the log.
+# Never ship this build.
 # STRESS_ONLY=card:DEMO-2,sampler (scenario names, comma separated) and STRESS_SECONDS=60 run those alone;
 # STRESS_START=3 begins 3 s after boot, STRESS_REPEAT=1 runs a scenario again after a restart
 # instead of going on to the next. STRESS_TRACE=worst traces the heap during that
@@ -172,17 +172,9 @@ ifeq ($(DEVICE),Cardenza)
 	fi
 	@cmp -s $(STRESS_BUILD)/sdkconfig.next $(STRESS_BUILD)/sdkconfig.stress || cp $(STRESS_BUILD)/sdkconfig.next $(STRESS_BUILD)/sdkconfig.stress
 	$(call RUN_IDF,-B '$(abspath $(STRESS_BUILD))' -DSDKCONFIG='$(abspath $(STRESS_BUILD))/sdkconfig.stress' -DCARDENZA_STRESS_TEST=ON -DCARDENZA_STRESS_ONLY='$(STRESS_ONLY)' -DCARDENZA_STRESS_SECONDS='$(STRESS_SECONDS)' -DCARDENZA_STRESS_START='$(STRESS_START)' -DCARDENZA_STRESS_REPEAT='$(STRESS_REPEAT)' -DCARDENZA_STRESS_TRACE='$(STRESS_TRACE)' -DCARDENZA_STRESS_LOOPS='$(STRESS_LOOPS)' build)
-	@echo "stress firmware in $(STRESS_BUILD): BUILD=$(STRESS_BUILD) tools/remote-flash/push.sh, then read the stress: lines"
+	@echo "stress firmware in $(STRESS_BUILD): cd $(STRESS_BUILD) && esptool.py --chip esp32s3 -p <port> write_flash @flash_args, then read the stress: lines"
 else
 	@echo stress is only supported for DEVICE=Cardenza
-	@exit 1
-endif
-
-remote-flash: build
-ifeq ($(DEVICE),Cardenza)
-	REMOTE='$(REMOTE)' tools/remote-flash/push.sh
-else
-	@echo remote-flash is only supported for DEVICE=Cardenza
 	@exit 1
 endif
 

@@ -6,33 +6,19 @@ sidebar_position: 14
 
 <Icon name="web" /> 没有机器时，可以直接在浏览器里用：[cardenza-synth.203.io](https://cardenza-synth.203.io/)（或 [cardenza-synth.vercel.app](https://cardenza-synth.vercel.app/)）。它不是仿造的界面，而是同一套固件代码（Groovebox 界面、AMY 音源、音序器、存储协议）编译成 WebAssembly：屏幕、按键灯、声音和机器上一样。
 
-<Keywords k="模拟器, 网页版, 浏览器, 在线, 没有机器, simulator, emulator, web, browser, online, try" />
-
-## 在说明书里跟着操作 {#web-live}
-
-说明书里每张截图下面都有 **▶ 在这里跟着操作**：
-
-|  |  |
-|---|---|
-| 1 | 点它，那张截图换成一台正在运行的设备（同一套固件代码），并自动走到截图里的画面（用按住 ESC / TAB / CTRL + GRID 切场景、轨道和页面，和你在机器上操作一样） |
-| 2 | 点一下设备（黄色虚线框）后，电脑键盘就在操作它（键位见下）；点页面其它地方就不再操作它 |
-| 3 | 「跳到这个画面」重新走到这一节的画面；「收起」把设备收起来 |
-
-- 整个页面只有一台设备在运行：你最后点的那一节就是正在操作的那一台，别的节回到截图。换到另一节时设备直接搬过去，里面的状态不会丢。
-- 切换中文 / English 时，设备跟着到同一张图的位置。
-
-<Keywords k="跟着操作, 跟着做, 实机, 试一试, 在线操作, 交互, try it, live, follow along, interactive, hands on" />
+<Keywords k="模拟器, 网页版, 浏览器, 在线, 没有机器, 试一试, simulator, emulator, web, browser, online, try, try it live" />
 
 ## 连接真机（USB） {#web-usb}
 
-<Icon name="usb" /> 用 USB 线把鸣片接到电脑上（Chrome 或 Edge）。不用点任何按钮：打开[入门教程](/)时浏览器会问能不能使用 MIDI 设备，选「允许」，之后机器一接上就自动连好。
+<Icon name="usb" /> 用 USB 线把鸣片接到电脑上（Chrome 或 Edge），打开 [入门教程](/)。不用点任何按钮：教程页面会问浏览器能不能使用 MIDI 设备，选「允许」，之后机器一接上就自动连好。
 
-- 在教程里，机器会跟着课程走：换到这一课的画面，要按的键会闪（其他键变暗）；做对了网页上会出现「学会了」，再多试几下，然后点「下一步」。
-- 在这本说明书里，真机上按的每个键都会同时按在说明书里正在运行的那台设备上：键会送到你最后点开的那一节的设备；如果还没有打开，就在当前阅读位置的那一节自动打开。真机本身照常运行。
+- 机器会跟着课程走：换到这一课的画面，要按的键一直闪（其他键变暗），做对了就常亮；网页上会出现「学会了」，再多试几下，然后点「下一步」。
+- 你自己的东西不会动：一课开始时，机器先把工作状态存到 SD 卡上，换成一个练习工程；教程结束时（离开课程、关掉网页、拔掉线，或者 30 秒没收到网页的消息）原样恢复。教程需要机器插着 SD 卡。
+- 说明书页面不会操作机器，机器照常运行。
 - 拔掉线就断开，插回去自动连上。
 - 它通过 USB MIDI 和机器通信（Web MIDI，包括 SysEx）：不需要装驱动，USB MIDI 和 USB 音频照常可用。之前点了「阻止」的话，在地址栏左边的网站设置里把 MIDI 设备改成允许，再刷新。
 
-<Keywords k="usb, 连接, 真机, 实体设备, 串口, 数据线, 找不到设备, midi, web midi, sysex, 允许, connect, device, cable, web serial, hardware, real device" />
+<Keywords k="usb, 连接, 真机, 实体设备, 串口, 数据线, 找不到设备, midi, web midi, sysex, 允许, 教程, 课程, 跟着操作, 跟着做, connect, device, cable, web serial, hardware, real device, guide, follow along" />
 
 ## 电脑键盘对应哪个键 {#web-keys}
 
@@ -68,9 +54,9 @@ sidebar_position: 14
 
 ## 存储与采样 {#web-storage}
 
-- 设置、工程和音色存在浏览器里（IndexedDB），目录结构和 SD 卡一样，刷新页面后还在。清除网站数据会把它们删掉。模拟器和说明书里的设备用的是同一份。
-- 机器自动保留的工作状态（[工作状态会被保留](./projects.mdx#project-session)）浏览器也保留：边做边存，刷新或关闭页面后回来还在，和真机拔电一样。要留成一个工程，仍然用 <Key k="FN+S" /> 保存。
+- 设置、工程和音色存在浏览器里（IndexedDB），目录结构和 SD 卡一样（`CardenzaSynth/…`），刷新页面后还在。清除网站数据会把它们删掉。
+- 机器自动保留的工作状态（[工作状态会被保留](./projects.mdx#project-session)）浏览器也保留：边做边存，页面切到后台时也存，刷新或关闭页面后回来还在，和真机拔电一样。要留成一个工程，仍然用 <Key k="FN+S" /> 保存。
 - 模拟器页面上的「Load project…」把鸣片卡上的 `.ccproj` 文件复制到浏览器里（不会覆盖已有工程，重名的自动加编号），并打开第一个；其余的在 SETUP FILES 里。
-- 「Load WAV…」把电脑上的音频文件放进共用采样目录 `Shared/Samples`，之后在 SAMPLER 的文件列表里就能选到。不是单声道 16 位 WAV 的文件（立体声、24 位、MP3……）会转换成单声道 16 位 44.1 kHz，并截到 5 秒。
+- 「Load WAV…」把电脑上的音频文件放进共用采样目录 `Samples/`，之后在 SAMPLER 的文件列表里就能选到。不是单声道 16 位 WAV 的文件（立体声、24 位、MP3……）会转换成单声道 16 位 44.1 kHz，并截到 5 秒。
 
 <Keywords k="浏览器存储, 自动保存, 刷新不丢, 导入 wav, 上传采样, 导入工程, 保存在哪, 刷新, browser storage, indexeddb, load wav, upload sample, load project, ccproj" />

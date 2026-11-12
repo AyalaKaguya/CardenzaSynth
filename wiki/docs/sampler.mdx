@@ -4,9 +4,9 @@ sidebar_position: 7
 
 # Sampling
 
-<Icon name="sample" /> The SAMPLER engine (<Track n="4" /> by default) plays a WAV recording. Load samples from the SD card or record one with the built-in microphone. All apps share the `Cardenza/Shared/Samples` folder on the card.
+<Icon name="sample" /> The SAMPLER engine (<Track n="4" /> by default) plays a WAV recording. Load samples from the SD card or record one with the built-in microphone. All apps share the `CardenzaSynth/Samples` folder on the card.
 
-Supported files: mono 16-bit PCM WAV, 8–96 kHz sample rate, up to 5 minutes. Short samples (up to about 186 ms, drum hits and the like) are kept in memory; longer ones play straight from the card.
+Supported files: mono 16-bit PCM WAV, 8–96 kHz sample rate, up to 5 minutes. Samples up to 2 seconds are kept in memory; longer ones play straight from the card.
 
 <Keywords k="sample, sampling, sampler, microphone, record audio, wav, field recording, vocals, 采样" />
 
@@ -35,7 +35,7 @@ In the web simulator "Load WAV…" puts a WAV from your computer into the shared
   <Step keys="OK" shot="sampler-rec" at="8,72,222,12"><Key k="OK" /> starts, <Key k="OK" /> again stops. The input level shows while recording.</Step>
 </Strip>
 
-- With a card the take goes straight to a file on it (`Session/take-<track>.wav` in this app's folder), safe on the card about once a second: a power cut loses at most the last second. A full card stops the recording and keeps what is there (CARD FULL). Without a card the take fits in free memory, only a few seconds.
+- With a card the take goes straight to a file on it (`CardenzaSynth/Session/take-<track>.wav`), safe on the card about once a second: a power cut loses at most the last second. A full card stops the recording and keeps what is there (CARD FULL). Without a card the take fits in free memory, only a few seconds.
 - The microphone shares a clock pin with the speaker: while recording the speaker is silent; the sequencer keeps running.
 - The microphone only runs while the recorder is on screen: leaving it (another scene or track) cancels the recording. <Key k="ESC" /> while recording cancels it too.
 - An unsaved take survives a power cut or a switch to another app: when the app starts again the recorder opens with it (UNSAVED TAKE IS BACK).

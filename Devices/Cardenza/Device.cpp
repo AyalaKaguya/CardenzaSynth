@@ -297,7 +297,7 @@ AppMessage g_appMessages[kAppQueue];
 std::atomic<std::size_t> g_appHead{0}, g_appTail{0};
 
 // The HAL's app reports (0xFF, or SysEx F0 23 7F): 'S' answers with what has gone through USB so far
-// (tools/remote-flash/gate.sh usb-* commands read it); everything else is for the app.
+// (tools/usb/cardenza_usb.py stats and test read it); everything else is for the app.
 void HandleAppReport(const std::uint8_t* report, std::size_t length)
 {
   if (length == 0) return;

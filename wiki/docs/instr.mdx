@@ -44,7 +44,22 @@ Changing the engine gives the track the new engine's default sound and goes back
   <Step keys="ADD" shot="instr-voice" at="8,40,200,26"><Key k="ADD" /> / <Key k="SUB" /> change the sound right on the VOICE page.</Step>
 </Strip>
 
-<Keywords k="change sound, next sound, preset, engine, choose synth, voice, engine picker, 换音色" />
+**A sound you have changed asks first.** Once a parameter differs from the sound as it was loaded, loading a sound (<Key k="ADD" /> / <Key k="SUB" /> on VOICE, <Key k="OK" /> in the browser, even the same sound again) or switching the engine asks before your edits go:
+
+<Shot name="preset-confirm">
+  <Mark at="8,43,172,11">The edits that would be lost (in red)</Mark>
+  <Mark at="10,70,104,26">OK: load it</Mark>
+  <Mark at="125,70,104,26">ESC: keep the edits</Mark>
+  <KeyMark keys="OK">Blinking: waiting for you</KeyMark>
+  <KeyMark keys="ESC">Keep</KeyMark>
+  <Caption>CUTOFF changed on T2, then ADD on VOICE: LOAD …? asks before the edited LEAD I goes.</Caption>
+</Shot>
+
+- `LOAD <sound>?` or `SWITCH TO <engine>?`, with `EDITS TO <sound> WILL BE LOST`. <Key k="OK" /> changes; <Key k="ESC" /> keeps your sound (and goes back to the browser or the engine picker if you came from there).
+- To keep the edited sound, save it first: SAVE or SAVE AS in the FN menu.
+- The guide's lessons never ask: their practice project is thrown away anyway.
+
+<Keywords k="change sound, next sound, preset, engine, choose synth, voice, engine picker, edits will be lost, unsaved sound, 换音色" />
 
 ## Browsing and saving sounds {#instr-presets}
 
@@ -57,7 +72,7 @@ Changing the engine gives the track the new engine's default sound and goes back
 - In the list the pads and the GRID do not type, so a stray key never starts a filter: searching is always <Key k="FN+F" />. An empty search shows everything again.
 - <Key k="ESC" /> clears the filter first, a second press closes.
 - <Key k="ADD" /> moves up, <Key k="SUB" /> down; <Key k="FN" /> + <Key k=";" /> <Key k="." /> too. <Key k="FN+ADD" /> / <Key k="FN+SUB" /> move 8 rows at a time.
-- **SAVE** (FN menu): your own sound is overwritten; a factory sound is stored as a new sound of yours with the next free number (for example `LEAD I 2`), without asking. **SAVE AS** asks for a name. Your sounds live in this app's Presets folder on the SD card (`Cardenza/Apps/Cardenza/Synth/Presets/<engine>/`).
+- **SAVE** (FN menu): your own sound is overwritten; a factory sound is stored as a new sound of yours with the next free number (for example `LEAD I 2`), without asking. **SAVE AS** asks for a name. Your sounds live on the SD card, one bank per engine (`CardenzaSynth/Presets/<engine>/`).
 
 <Keywords k="presets, preset, preset library, browse, search, search sound, find, filter, fn f, save sound, save as, patch library, 音色库" />
 

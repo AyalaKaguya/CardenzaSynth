@@ -35,7 +35,8 @@ sidebar_position: 16
 | <Key k="CTRL" /> + <Key k="ADD" /> / <Key k="SUB" /> | next / previous page |
 | <Key k="FN" /> tap | open / close the menu of this screen (it stays open; a GRID key runs an item and closes it) |
 | <Key k="hold FN" /> | the same menu while held; the letters and edge keys below are its second functions |
-| <Key k="ADD" /> <Key k="SUB" /> | increase / decrease, move in a list; held they repeat and speed up |
+| <Key k="ADD" /> <Key k="SUB" /> | increase / decrease, move in a list; held they repeat and speed up; on the SEQ note page with no step selected: next / previous page of the GRID |
+| <Key k="GRID" /> on the SEQ note page | tap: select a step and keep it (tap again to let go); hold: selected while held; with pads held: their notes go into the step, or come out |
 | <Key k="OK" /> | confirm, open, switch; on the SEQ note page a tap switches ROLL / STEP, a hold opens RECORD, with steps selected it walks NOTE → LEN → VEL → TIME |
 | <Key k="PLAY" /> | play / stop |
 | HOME side key | not used by the groovebox (stop all is <Key k="FN+ESC" />) |
@@ -52,7 +53,7 @@ sidebar_position: 16
 | <Key k="FN+ESC" /> | stop all: the sequencer, every ARP and every sounding note |
 | <Key k="FN+TAB" /> | previous track |
 | <Key k="FN+CTRL" /> | previous page |
-| <Key k="FN+ADD" /> / <Key k="FN+SUB" /> | big steps (BPM ±10, settings ×5); on the SEQ note page: next / previous page of a long pattern; in lists: a page at a time |
+| <Key k="FN+ADD" /> / <Key k="FN+SUB" /> | big steps (BPM ±10, settings ×5); on the SEQ note page with no step selected: next / previous pattern; in lists: a page at a time |
 | <Key k="FN+OK" /> | the screen's second OK: RESET (default value), SCOPE (SEQ), ADD TO SONG (SESSION), SONG / LOOP (SONG); in the sample list: rename / delete |
 | <Key k="FN+PLAY" /> | record on / off (REC) |
 | <Key k="FN+C" /> <Key k="FN+V" /> | copy / paste (steps, pattern or song row) |
@@ -90,7 +91,7 @@ sidebar_position: 16
 
 | Term | Meaning |
 |---|---|
-| Track | one of four, each with one engine, its own patterns, chord and ARP; you start on T2 |
+| Track | one of four, each with one engine, its own patterns, chord and ARP; you start on T1 |
 | Engine | the synth that makes the sound: DRUMS, JUNO, DX7, SAMPLER |
 | Preset / sound | a set of an engine's parameters |
 | Step | the sequencer's smallest cell, a 1/16 note |
@@ -101,7 +102,7 @@ sidebar_position: 16
 | SETUP | scene 0: project, files and the settings for every track; hold ESC + GRID column 1 |
 | FN menu | what the current screen can do, on the GRID while FN is held (or kept open with a tap) |
 | Take | a phrase you played, kept by capture |
-| Autosave | the working state, kept in the device's own memory, so the power can go at any time |
+| Autosave | the working state, kept on the SD card by itself, so the power can go at any time |
 | GRID | the 4×4 on the right, matching the 4×4 in the middle of the screen |
 | PADS | the 4×8 in the middle, always playing the current track |
 | Send | how much goes to the master delay / reverb |

@@ -17,7 +17,7 @@ using namespace theme;
 constexpr std::array<KeyRole, 4> kRight{{KeyRole::Add, KeyRole::Sub, KeyRole::Enter, KeyRole::Play}};
 constexpr std::array<const char*, 4> kLeftNames{{"ESC", "TAB", "FN", "CTRL"}};
 constexpr std::array<const char*, 4> kRightNames{{"ADD", "SUB", "ENTER", "PLAY"}};
-constexpr std::array<Color, 4> kLeftColors{{kEsc, kTab, kFn, kCtrl}};
+constexpr std::array<const Color*, 4> kLeftColors{{&kEsc, &kTab, &kFn, &kCtrl}};
 constexpr std::array<Glyph, 4> kLeftGlyphs{{Glyph::Back, Glyph::Tab, Glyph::Menu, Glyph::Pages}};
 
 void KeyCap(Gfx& g, const Rect& rect, Color color, bool active, bool right, int density = 4)
@@ -306,7 +306,7 @@ void View::Sides(Gfx& g, const Controller& controller, Animator& animator)
     const bool selected = layer_ == left[row];
     const bool usable = !saving && (!modal || row == 0 || (row == 2 && (context || modalKind == ModalKind::Menu)));
     const bool leftDown = pointerDown_ && !pointerCancelled_ && pressed_.localLayer && pressed_.layer == left[row];
-    const Color leftColor = usable ? kLeftColors[row] : kShade;
+    const Color leftColor = usable ? *kLeftColors[row] : kShade;
     const Rect leftCap{layout::kEdgePadding, l.y + 3, 10, 114};
     const float leftLed = animator.LedShown(KeyIndex(row, 0));
     const int leftDensity = std::clamp(static_cast<int>(1 + leftLed), 1, 16);
@@ -314,7 +314,7 @@ void View::Sides(Gfx& g, const Controller& controller, Animator& animator)
     if (!selected && !leftDown) g.Fill(Rect{leftCap.x + 1, l.y + 53, 8, 11}, kBlack);
     g.DrawGlyph(leftCap.x + 2, l.y + 55, kLeftGlyphs[row], selected || leftDown ? kBlack : leftColor);
     g.TextAligned(Rect{20, l.y + 54, 26, 12}, modal && row == 0 ? "BACK" : kLeftNames[row],
-                  usable ? selected ? kLeftColors[row] : kDim : kShade, Font::Micro, Align::Center);
+                  usable ? selected ? *kLeftColors[row] : kDim : kShade, Font::Micro, Align::Center);
     if (usable)
     {
       if (modal && row == 0) AddHit(l, {Kind::Back});
@@ -369,7 +369,7 @@ void View::Tabs(Gfx& g, const Controller& controller, Animator& animator)
 void View::Layers(Gfx& g, const Controller& controller, Animator& animator, Layer layer, float progress)
 {
   const auto index = static_cast<std::size_t>(layer) - 1;
-  const Color accent = kLeftColors[index];
+  const Color accent = *kLeftColors[index];
   const Rect source{layout::kEdgePadding, static_cast<int>(index) * 120 + 3, 10, 114};
   (void)render::GrowOverlay(g, layout::kCenter, layout::kCenter, source, accent, progress);
   if (layer == Layer::Scenes)
@@ -430,6 +430,7 @@ void View::Layers(Gfx& g, const Controller& controller, Animator& animator, Laye
 
 void View::Render(Gfx& g, Controller& controller, Animator& animator)
 {
+  theme::Use(controller.HostView().ScreenTheme());
   const auto& state = controller.State();
   const auto now = animator.Now();
   const auto generation = Generation(controller);

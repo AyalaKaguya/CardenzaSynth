@@ -8,7 +8,7 @@ Every track has up to 16 patterns. Each pattern has its own length, 1–256 step
 
 | Page | For |
 |---|---|
-| <Page name="ROLL" /> / <Page name="STEP" /> note page | writing, editing and recording notes, in two views: ROLL piano roll (default) and STEP step recording; on a drum track it is the <Page name="DRUMS" /> drum machine |
+| <Page name="ROLL" /> / <Page name="STEP" /> note page | writing, editing and recording notes, in two views: ROLL piano roll and STEP, drawn like a drum machine; on a drum track the STEP view is the <Page name="DRUMS" /> drum machine |
 | <Page name="PATTERN" /> | choosing, creating and queueing the track's patterns |
 | <Page name="TRACK" /> | the track's sequencer switch, the current pattern's length, global swing and BPM |
 
@@ -19,22 +19,27 @@ Every track has up to 16 patterns. Each pattern has its own length, 1–256 step
 <Key k="OK" /> is this page's <Icon name="rec" /> **record key**: tap it to switch between the two views, hold it for the RECORD panel. With steps selected a tap on <Key k="OK" /> picks what you edit instead (see [Selecting and editing](#seq-edit)).
 
 <Strip>
-  <Step shot="seq-notes" at="footer"><Icon name="roll" /> **ROLL piano roll** (default): time × pitch, notes drawn as bars.</Step>
-  <Step keys="OK" shot="seq-step-view" at="footer"><Icon name="step" /> Tap <Key k="OK" />: **STEP recording**, a 4×4 of steps with note names.</Step>
+  <Step shot="seq-notes" at="footer"><Icon name="roll" /> **ROLL piano roll**: time × pitch, notes drawn as bars. Melodic tracks start here.</Step>
+  <Step keys="OK" shot="seq-step-view" at="footer 116,14,113,108"><Icon name="step" /> Tap <Key k="OK" />: **STEP**, a row per note over the steps, and on the right the GRID of the note the pads chose. Drum tracks start here: it is their drum machine.</Step>
   <Step keys="OK" shot="seq-notes" at="footer">Tap again: back to ROLL. The OK strip on screen is <Led state="half" /> in ROLL, <Led state="full" /> in STEP.</Step>
 </Strip>
 
-Both views edit the same pattern, and the 16 GRID keys are the 16 steps of the page on screen in both (row 1 is steps 1–4, row 2 steps 5–8…).
+Both views show the same pattern and **take exactly the same keys**; only the drawing differs. Drum tracks and melodic tracks each remember their own view. The 16 GRID keys are the 16 steps of the page on screen (row 1 is steps 1–4, row 2 steps 5–8…):
 
-|  | <Icon name="roll" /> ROLL | <Icon name="step" /> STEP |
-|---|---|---|
-| Screen | time × pitch, notes as bars | a 4×4 of steps with note names or chords |
-| GRID tap | goes to that step (tap it again to let go); with SELECT MULTI it adds steps | moves the write cursor to the step |
-| Playing PADS | add / remove notes on selected steps; with none selected they just play (and record live with REC on) | write into the cursor step, the cursor moves on when released |
-| <Key k="ADD" /> / <Key k="SUB" /> | change the selected steps; with none selected, next / previous pattern | move the cursor one step |
-| <Key k="FN+ADD" /> / <Key k="FN+SUB" /> | bigger steps on the selection; with none selected, next / previous page of a long pattern | move the cursor a page (4 steps in a one-page pattern) |
+| Key | Does |
+|---|---|
+| GRID tap | selects that step and keeps it, so your hands are free for the pads; tap it again to let go, tap another step to move there (with SELECT MULTI a tap adds a step) |
+| GRID held | the step is selected while its key is down and let go when you release it; steps held together are edited together. Stopped, you hear the step while you hold it |
+| PADS held + GRID | the held notes go into that step; if it already holds any of them, they all come out instead |
+| PADS with steps selected | the same on the selected steps: a pad's notes (its whole chord) go in, or come out |
+| PADS with nothing selected | just play (and record live with REC on) |
+| <Key k="ADD" /> / <Key k="SUB" /> | selected steps: change them; nothing selected: next / previous page of a long pattern |
+| <Key k="FN+ADD" /> / <Key k="FN+SUB" /> | selected steps: change them in bigger steps; nothing selected: next / previous pattern |
+| <Key k="OK" /> | tap: switch the view (with steps selected: the next edit lane); hold: the RECORD panel |
 
-<Keywords k="view, mode, piano roll, step view, switch view, 视图" />
+Nothing moves on by itself: there is no write cursor, and a step you leave alone is a rest.
+
+<Keywords k="view, mode, piano roll, step view, switch view, step keys, matrixos, 视图" />
 
 ## ROLL piano roll {#seq-roll}
 
@@ -48,66 +53,72 @@ Both views edit the same pattern, and the 16 GRID keys are the 16 steps of the p
   <Caption>ROLL: a few notes on T2. The row of small cells at the bottom is the GRID's 16 steps.</Caption>
 </Shot>
 
-The page's 16 steps run left to right, pitch bottom to top (the range around the notes in use, shown automatically: at least an octave, black-key rows shaded). The more solid a note, the higher its velocity; the green line is the playhead. The small cells at the bottom: dithered where a step holds notes, white where it is selected, green where the playhead is. An empty pattern says HOLD A PAD + TAP STEPS.
+The page's steps run left to right (a pattern shorter than 16 steps fills the width too), pitch bottom to top. On a melodic track the rows are every key the pads play at the current octave, used or not, black-key rows shaded; notes outside that range widen it (up to 41 rows). On a drum track the rows are the drums in use, by name. The more solid a note, the higher its velocity; the green line is the playhead. The small cells at the bottom: dithered where a step holds notes, white where it is selected, green where the playhead is.
+
+While you hold pads, the rows of their notes light up across the roll (chord tones too), so you see where a tapped step will write. An empty pattern says HOLD A PAD + TAP STEPS.
 
 **Write notes: hold one or more PADS, then tap steps on the GRID.**
 
 <Strip>
-  <Step keys="hold r2c1~C" shot="seq-hold-pad">Hold a note (C).</Step>
-  <Step keys="hold r2c1~C + G1" shot="seq-hold-tap" at="28,57,15,10">Keep holding and tap GRID 1: C is written into step 1.</Step>
-  <Step keys="hold r2c1~C + G5, G9" shot="seq-notes" at="28,110,195,11">Go on with 5, 9…, then switch to another note and tap a few more steps.</Step>
+  <Step keys="hold r3c1~C" shot="seq-hold-pad">Hold a note (C3, bottom left): its row lights up.</Step>
+  <Step keys="hold r3c1~C + G1" shot="seq-hold-tap" at="28,57,15,10">Keep holding and tap GRID 1: C is written into step 1.</Step>
+  <Step keys="hold r3c1~C + G5, G9" shot="seq-notes" at="28,110,195,11">Go on with 5, 9…, then switch to another note and tap a few more steps. Tap a step that has the note and it comes out again.</Step>
 </Strip>
 
-- **Go to a step**: tap a GRID key to go to that step; its notes light up fully on the pads, so you see at once whether the step has notes. Tap the same step again to let go. See [Selecting and editing](#seq-edit).
+- **Look at a step**: tap its GRID key; its notes light up fully on the pads, so you see at once what it holds. Tap the same step again to let go. See [Selecting and editing](#seq-edit).
 - **Record live**: turn REC on (<Key k="FN+PLAY" /> or the RECORD panel), start playback, then play the pads, see [Play and live recording](#seq-transport).
-- With the track's sequencer off (TRACK page) the page says SEQUENCE OFF.
+- With the track's sequencer off (TRACK page) the page says SEQUENCE OFF - SEQ > TRACK.
 
 <Keywords k="piano roll, roll, pitch, note length, duration, 钢琴卷帘" />
 
-## STEP recording {#seq-step-rec}
+## STEP view {#seq-step-rec}
 
-Write notes one step at a time, without keeping time:
-
-<Strip>
-  <Step keys="OK" shot="seq-step-view" at="cell:1,1 footer">Tap <Key k="OK" /> for the STEP view. The red marching frame is the **write cursor**.</Step>
-  <Step keys="G2, r2c2~D" shot="seq-step" at="cell:1,2">Tap GRID 2 to put the cursor there, then press a PAD: D is written into step 2. Press several together for a chord.</Step>
-  <Step keys="r2c3~E" shot="seq-step" at="cell:1,3 cell:1,4">When you let go the cursor moves on: E goes into step 3, and the cursor waits on step 4 (the "+1" in its corner).</Step>
-  <Step keys="ADD"><Key k="ADD" /> skips a step (a rest), <Key k="SUB" /> goes back.</Step>
-  <Step keys="hold r2c1~C + G16">Hold PADS and tap a GRID key: they are written straight into that step.</Step>
-</Strip>
+The STEP view draws every track the way a drum machine does: the whole page at a glance on the left, and on the right the GRID as it lies under your fingers.
 
 <Shot name="seq-step">
-  <Mark at="cell:1,4">Write cursor: blinking</Mark>
-  <Mark at="212,30,17,9">How far it moves each time</Mark>
-  <Mark at="cell:1,1">A written step</Mark>
-  <Mark at="footer">STEP view</Mark>
-  <KeyMark keys="G4">Cursor: blinking</KeyMark>
-  <KeyMark keys="G1 G2 G3">Has notes: half lit</KeyMark>
-  <Caption>The STEP view: one cell per step, with note names; the red frame is the cursor.</Caption>
+  <Mark at="10,14,100,108">A row per note × the page's 16 steps</Mark>
+  <Mark at="116,14,40,11">E3: the note the pads chose last</Mark>
+  <Mark at="144,25,26,22">Step 2: selected</Mark>
+  <Mark at="footer">Edit lane · the step's notes</Mark>
+  <KeyMark keys="G2">Selected: fully lit</KeyMark>
+  <KeyMark keys="r3c2 r3c3">Its notes D3 E3: fully lit</KeyMark>
+  <KeyMark keys="G1 G3 G5">Has notes: half lit</KeyMark>
+  <Caption>STEP on T2: step 2 selected, the pads D and E tapped into it.</Caption>
 </Shot>
 
-- A press replaces the notes the cursor step had.
-- How far the cursor moves each time is STEP in the RECORD panel (1 / 2 / 4).
-- Written notes use the velocity of SETUP KEYS (VELO) and are one step long. Switch back to ROLL later to fine-tune them.
-- In a long pattern the cursor takes the GRID along to the page it moves to; <Key k="FN+ADD" /> / <Key k="FN+SUB" /> move it a whole page.
-- While playing, the step the playhead enters flashes green once and keeps a green outline until the next step; the steps behind it leave no trail.
-- VIEW in the FN menu switches the view too, from every SEQ page.
+- **Left**: one row per note (on a melodic track every key the pads play at this octave, the highest at the top, black-key rows shaded; widened for notes outside it, up to 41 rows) over the page's 16 steps. Held notes light their row; the selected steps light their column.
+- **Right**: the 4×4 GRID for the note the pads chose last (its name above): its 16 steps, how hard by dither density, the selected steps inverse.
+- The keys are those of every note page (see the table in [The note page's two views](#seq-notes)). To write a step at a time without keeping time:
 
-<Keywords k="step record, step input, step entry, rest, cursor, one step at a time, 步进录制" />
+<Strip>
+  <Step keys="OK" shot="seq-step-view" at="116,14,113,108">Tap <Key k="OK" /> for the STEP view.</Step>
+  <Step keys="G2, r3c2~D, r3c3~E" shot="seq-step" at="144,25,26,22">Tap GRID 2: step 2 is selected and stays so. Press D, then E: both go into step 2. Press E again and it comes out.</Step>
+  <Step keys="G2">Tap GRID 2 again to let it go, or tap the next step you want to write.</Step>
+</Strip>
+
+- Notes written from the pads get the velocity of SETUP KEYS (VELO) and are one step long; drums go in as hard as their pad's row. Change them with the edit lanes (see [Selecting and editing](#seq-edit)).
+- While playing, the step the playhead enters flashes green once and keeps a green outline until the next step; the steps behind it leave no trail.
+- VIEW in the FN menu and in the RECORD panel switches the view too.
+
+<Keywords k="step view, step record, step input, step entry, rest, one step at a time, step machine, 步进录制" />
 
 ## Selecting and editing {#seq-edit}
 
-In the ROLL view a GRID tap **goes to a step**: only that step is selected, tapping another step moves there, and tapping the same step again lets go (the pads play again). The notes of the step you are on light up fully on the pads; on a step without notes the pads stay a dim keyboard. To select several steps at once, set **SELECT** to MULTI on the KEYS page of <Scene name="SETUP" /> (see [KEYS](./setup.mdx#setup-keys)).
+A GRID key **selects** its step, in both views and on drum tracks alike, the way MatrixOS's sequencer does:
+
+- **Tap** (released within 0.25 s, no other key meanwhile): the step stays selected and the hands are free. With **SELECT** ONE (the default) a tap on another step moves the selection there, and a tap on the step selected alone lets it go. With **SELECT** MULTI (on the KEYS page of <Scene name="SETUP" />, see [KEYS](./setup.mdx#setup-keys)) a tap adds a step, and a tap on a selected one takes it out.
+- **Hold** (longer, or another key pressed meanwhile): the step is selected only while its key is down. Hold several to edit them together.
+- <Key k="ESC" /> clears the selection; turning the page with SELECT ONE clears it too.
 
 <Shot name="seq-selected">
-  <Mark at="76,15,14,96">The step you are on</Mark>
-  <KeyMark keys="G5">Current step: fully lit</KeyMark>
-  <KeyMark keys="r2c1">This step's note: fully lit</KeyMark>
+  <Mark at="76,15,14,96">The selected step</Mark>
+  <KeyMark keys="G5">Selected: fully lit</KeyMark>
+  <KeyMark keys="r3c1">This step's note: fully lit</KeyMark>
   <KeyMark keys="PADS">Other keys: half lit</KeyMark>
-  <Caption>On step 5: its column is highlighted and its note lights up fully on the pads.</Caption>
+  <Caption>Step 5 selected: its column is highlighted and its note lights up fully on the pads.</Caption>
 </Shot>
 
-While playing with no step selected, the notes of the step under the playhead light up on the pads too. Once on a step:
+The notes of the selected steps light up fully on the pads; while playing with no step selected, those of the step under the playhead do. Once a step is selected:
 
 <Strip>
   <Step keys="G5" shot="seq-selected" at="76,15,14,96">Tap GRID 5: step 5 is selected and its column highlighted.</Step>
@@ -117,40 +128,42 @@ While playing with no step selected, the notes of the step under the playhead li
 
 | Key | Does |
 |---|---|
-| PADS | add or remove that note on the selected steps (each tone of a chord separately); while playing they edit without sounding |
+| PADS | put that pad's notes into the selected steps, or take them out: a chord goes in or out as one group (a step that holds any of its notes loses them all and gains none); while playing they edit without sounding |
 | <Key k="OK" /> | what you edit: NOTE (pitch) → LEN (length) → VEL (velocity) → TIME (small timing offset) |
 | <Key k="ADD" /> / <Key k="SUB" /> | change it; held they repeat; with <Key k="FN" /> in bigger steps |
 | <Key k="FN+OK" /> | switch between editing all notes of the chord (ALL) and just one of them (its name on the bottom line) |
 | <Key k="ESC" /> | clear the selection (the next ESC changes scene) |
 
-While steps are selected, their notes are <Led state="full">fully lit</Led> on the pads.
+On a drum track the pads choose the drum, so the NOTE lane does not move hits (ADD / SUB say PADS PICK DRUMS); LEN, VEL and TIME work as on any track.
 
-<Keywords k="edit notes, pitch, note length, velocity, timing, nudge, microtiming, select steps, 编辑音符" />
+<Keywords k="edit notes, pitch, note length, velocity, timing, nudge, microtiming, select steps, hold step, tap step, 编辑音符" />
 
-## DRUMS: the drum machine page {#seq-drums}
+## DRUMS: the drum machine {#seq-drums}
 
-On a drum track (<Track n="1" /> by default) the note page is <Page name="DRUMS" />, a drum machine, instead of ROLL / STEP.
+On a drum track (<Track n="1" /> by default) the STEP view is the drum machine, its tab reads <Page name="DRUMS" />, and it is where drum tracks start. <Key k="OK" /> switches to ROLL, a piano roll of the drums in use, as on any track.
 
 <Shot name="seq-drums">
-  <Mark at="9,15,95,108">Eight drums × 16 steps</Mark>
-  <Mark at="106,15,125,108">The chosen drum on the GRID</Mark>
-  <Mark at="footer">DRUMS page</Mark>
-  <KeyMark keys="G1 G3 G5">The chosen drum (CH) hits: fully lit</KeyMark>
+  <Mark at="10,14,96,108">Eight drums × 16 steps</Mark>
+  <Mark at="110,14,119,108">The chosen drum (CH) on the GRID</Mark>
+  <Mark at="footer">DRUMS</Mark>
+  <KeyMark keys="G1 G3 G5">Has hits: half lit</KeyMark>
   <KeyMark keys="G2">Nothing on this step: off</KeyMark>
-  <Caption>DRUMS on T1: the beat of every drum on the left, the chosen drum's 16 steps on the right.</Caption>
+  <Caption>The drum machine on T1: the beat of every drum on the left, the chosen drum's 16 steps on the right.</Caption>
 </Shot>
 
-- **PADS** choose the drum and how hard: each column is a drum, the rows are how hard (top row hardest). The pad sounds and the GRID now writes that drum at that velocity.
-- **GRID**: a tap on an empty step adds a hit at once (stopped, you hear it); a tap on an existing hit takes it out when you let go.
-- **Hold a hit**: the screen shows its value, <Key k="ADD" /> / <Key k="SUB" /> change its velocity; <Key k="OK" /> switches to its timing within the step (6 microsteps) and back. An edited or long-held hit stays.
+- **PADS** are drums and velocities: each column is a drum, each row how hard (top row 127, then 100, 70, bottom row 40). A pad sounds and chooses the drum the GRID on the right shows.
+- **Hold a pad and tap steps**: that drum goes into them as hard as the pad's row (or comes out where it already is). Or tap a step first and then press pads.
+- **Change a hit**: select its step (hold or tap it), <Key k="OK" /> to VEL or TIME, <Key k="ADD" /> / <Key k="SUB" />.
+- How hard a hit is shows as dither density in four clear levels (solid, half, a quarter, an eighth); a hit off the beat is a thin bar at its place in the step.
+- While you hold a pad its drum's row lights up across, as dense as the pad hits, and its name turns inverse.
 
 <Strip>
-  <Step keys="hold G1" shot="seq-drums" at="110,26,28,24">Hold the CH hit on step 1 (keep holding).</Step>
-  <Step keys="hold G1 + ADD" shot="seq-drum-edit" at="12,96,213,25">Press <Key k="ADD" />: the hit gets harder and the screen shows CH VELOCITY. Let go and the hit stays.</Step>
+  <Step keys="hold r3c3~CH + G1, G3, G5" shot="seq-drums" at="110,14,119,108">Hold the closed hat (CH, bottom row) and tap every other step: CH goes in at the softest velocity.</Step>
+  <Step keys="hold G1 + OK, OK, ADD" shot="seq-drum-edit" at="footer">Hold step 1, tap <Key k="OK" /> twice for VEL and press <Key k="ADD" />: its hits get harder. Let go and step 1 is no longer selected.</Step>
 </Strip>
 
-- GRID lights: the chosen drum's hits fully lit, steps with only other drums half lit, empty steps off.
-- There is no ROLL / STEP view on a drum track; record live and the RECORD panel work as on the other tracks.
+- GRID lights as on every note page: steps with hits half lit, selected steps fully lit, empty steps off; while you hold pads, the steps that hold their drums are fully lit.
+- Record live and the RECORD panel work as on the other tracks.
 
 <Keywords k="drums, drum machine, beat, kick, snare, hi hat, drum sequencer, 鼓机" />
 
@@ -159,12 +172,12 @@ On a drum track (<Track n="1" /> by default) the note page is <Page name="DRUMS"
 <Strip>
   <Step keys="PLAY" shot="seq-playing" at="strip:PLAY 77,15,4,96"><Key k="PLAY" />: play; the green line is the playhead. Press again to stop, and the playhead rewinds to step 1.</Step>
   <Step keys="FN+PLAY" shot="seq-recording" at="strip:PLAY footer"><Key k="FN+PLAY" />: record arm (REC). The PLAY light blinks, REC blinks in the status line and, while playing, a red frame goes around the screen.</Step>
-  <Step keys="r2c1~C" shot="seq-recording" at="0,13,240,110">Play the PADS while it plays: the notes are written into the pattern where you play them (overdub).</Step>
+  <Step keys="r3c1~C" shot="seq-recording" at="0,13,240,110">Play the PADS while it plays: the notes are written into the pattern where you play them (overdub).</Step>
 </Strip>
 
 - REC can also be turned on in the RECORD panel or with REC in the FN menu. While recording is armed the PLAY strip on screen is red.
 - Recording is overdub: existing notes stay, and new ones land on the nearest microstep. With ARP on, the arpeggiator's notes are what gets recorded.
-- Live recording works in the ROLL view and on the DRUMS page with no step selected; in the STEP view the pads write into the cursor step instead.
+- Live recording takes the pads while no step is selected, in both views and on the drum machine; with steps selected the pads edit them instead.
 - A wrong note: select its step and clear it with <Key k="FN+X" />, or tidy the timing with <Key k="FN+Q" />.
 
 <Shot name="seq-recording">
@@ -183,19 +196,19 @@ On a drum track (<Track n="1" /> by default) the note page is <Page name="DRUMS"
 On the note page **hold <Key k="OK" />** (about half a second) for the RECORD panel, or pick RECORD in the FN menu; <Key k="ESC" /> closes it.
 
 <Shot name="record">
-  <Mark at="cells:1,1-1,4">Settings: REC · SNAP · STEP · VIEW</Mark>
+  <Mark at="cells:1,1-1,3">Settings: REC · SNAP · VIEW</Mark>
   <Mark at="cells:2,1-3,4">Last 8 takes, newest first</Mark>
   <Mark at="cell:2,2">The chosen take</Mark>
   <Mark at="cells:4,1-4,4">How this bar would land</Mark>
   <Mark at="footer">±bar · OK new pattern · FN+OK merge</Mark>
-  <KeyMark keys="G1-G4">Settings</KeyMark>
+  <KeyMark keys="G1-G3">Settings</KeyMark>
   <KeyMark keys="G5-G12">Takes</KeyMark>
   <Caption>The RECORD panel: settings on top, takes in the middle, the bar to place below.</Caption>
 </Shot>
 
 | GRID | Holds |
 |---|---|
-| row 1 | **REC** live recording on / off · **SNAP** whether takes land on whole steps (STEPS) or keep their timing (FREE) · **STEP** how far step recording moves (1 / 2 / 4) · **VIEW** ROLL / STEP |
+| row 1 | **REC** live recording on / off · **SNAP** whether takes land on whole steps (STEPS) or keep their timing (FREE) · **VIEW** ROLL / STEP; the fourth cell is empty |
 | rows 2–3 | the last 8 takes (capture), newest first |
 | row 4 | the chosen take's bar as it would land in a pattern |
 
@@ -210,7 +223,7 @@ On the note page **hold <Key k="OK" />** (about half a second) for the RECORD pa
 <Icon name="capture" /> No need to turn on REC: every note you play on the pads is kept in the background (capture). When something good came out, put it into the sequencer afterwards:
 
 <Strip>
-  <Step keys="r2c1~C, r2c3~E, r2c5~G" shot="seq-keyboard">Just play. A pause longer than 2.5 s, a track change or 60 seconds starts a new take.</Step>
+  <Step keys="r3c1~C, r3c3~E, r3c5~G" shot="seq-keyboard">Just play. A pause longer than 2.5 s, a track change or 60 seconds starts a new take.</Step>
   <Step keys="hold OK" shot="record" at="cells:2,1-3,4">Hold <Key k="OK" />: the two middle rows are the last 8 takes, with number, track and note count.</Step>
   <Step keys="G6" shot="record" at="cell:2,2 cells:4,1-4,4">Tap a take: row 4 shows how its bar would land. <Key k="ADD" /> / <Key k="SUB" /> pick another bar.</Step>
   <Step keys="OK" shot="record-placed" at="14,94,212,28"><Key k="OK" />: into a **new pattern** on this track; not a single existing note is touched.</Step>
@@ -234,18 +247,19 @@ A pattern can be up to 256 steps long; the GRID and the screen always show one p
 </Shot>
 
 - **Set the length**: STEPS on the TRACK page (<Key k="ADD" /> / <Key k="SUB" /> one step, <Key k="FN+ADD" /> / <Key k="FN+SUB" /> to the next page boundary), or LEN − / LEN + in the FN menu: 1, 2, 4, 8, 16, 32, 48 … 256.
-- **Turn the page**: <Key k="FN+ADD" /> / <Key k="FN+SUB" /> on the note page with no step selected, or PAGE − / PAGE + in the FN menu.
+- **Turn the page**: <Key k="ADD" /> / <Key k="SUB" /> on the note page with no step selected (their icons are → ←, and PAGE n/m pops up), or PAGE − / PAGE + in the FN menu.
+- **Change pattern**: <Key k="FN+ADD" /> / <Key k="FN+SUB" /> on the note page with no step selected go to the next / previous pattern (PATTERN n/m and its name pop up); while playing the switch waits for the end of the loop (NEXT PATTERN).
 - While playing the GRID follows the playhead from page to page; after you turn a page yourself it stays there until the next PLAY. With a step selected it does not turn.
 - A new pattern starts with the length of the current one; a duplicated pattern keeps its length. Steps beyond the length are off on the GRID.
-- Memory is used only by pages that hold notes. When it runs out the note is not written and the screen says MEMORY FULL.
+- Memory is used only by pages that hold notes. When it runs out the note is not written and the screen says MEMORY FULL - NOTE NOT WRITTEN.
 
 <Shot name="seq-long">
   <Mark at="footer">page 2/3</Mark>
-  <Mark at="12,96,213,25">the page hint</Mark>
-  <Caption>A 48-step pattern on its second page: the GRID now shows steps 17–32.</Caption>
+  <Mark at="12,96,213,25">PAGE 2/3</Mark>
+  <Caption>A 48-step pattern after <Key k="ADD" />: the GRID now shows steps 17–32.</Caption>
 </Shot>
 
-<Keywords k="long pattern, pattern length, 32 steps, 64 steps, page, step page, bars, more than 16 steps, 长 Pattern, 翻页" />
+<Keywords k="long pattern, pattern length, 32 steps, 64 steps, page, step page, bars, more than 16 steps, next pattern, 长 Pattern, 翻页" />
 
 ## PATTERN page {#seq-patterns}
 
@@ -263,7 +277,7 @@ A pattern can be up to 256 steps long; the GRID and the screen always show one p
 - Tap a slot: switch to that pattern. Stopped, it switches at once; playing, it is **queued** until the track finishes its loop (the cell shows NEXT and a countdown bar, its key light is <Led state="blink">blinking</Led>).
 - Tap the "NEW" slot: a new empty pattern (up to 16 per track).
 - The pattern in use shows how many of its steps hold notes.
-- <Key k="ADD" /> / <Key k="SUB" />: next / previous (queued while playing); <Key k="OK" /> goes back to the note page.
+- <Key k="ADD" /> / <Key k="SUB" /> (with or without <Key k="FN" />): next / previous (queued while playing); <Key k="OK" /> goes back to the note page.
 - <Key k="FN+D" />: duplicate the current pattern into the next free slot. <Key k="FN+C" /> / <Key k="FN+V" /> copy and paste a whole pattern, <Key k="FN+X" /> clears it (after confirming).
 
 <Keywords k="pattern, new pattern, switch pattern, duplicate pattern, queue, next pattern, clip, delete pattern, clear pattern" />

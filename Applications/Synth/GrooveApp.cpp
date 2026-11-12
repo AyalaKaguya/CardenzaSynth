@@ -1277,6 +1277,31 @@ groove::SaveResult GrooveApp::SaveProject(const std::string& name, bool overwrit
   }
 }
 
+groove::SaveResult GrooveApp::RenameProject(const std::string& from, const std::string& to, std::string& message)
+{
+  if (!synth::IsProjectNameValid(to))
+  {
+    message = "INVALID NAME";
+    return groove::SaveResult::Failed;
+  }
+  if (!os::storage::CardPresent())
+  {
+    message = "NO SD CARD";
+    return groove::SaveResult::Failed;
+  }
+  const auto result = synth::RenameProjectFile(from, to);
+  std::printf("Groove: rename %s to %s: result %d\n", from.c_str(), to.c_str(), static_cast<int>(result));
+  if (result == synth::ProjectResult::StorageError) os::storage::ReportCardIoError();
+  switch (result)
+  {
+    case synth::ProjectResult::Ok: return groove::SaveResult::Ok;
+    case synth::ProjectResult::Exists: return groove::SaveResult::Exists;
+    case synth::ProjectResult::Invalid: message = "NOT ON THE CARD"; return groove::SaveResult::Failed;
+    case synth::ProjectResult::StorageError:
+    default: message = "SD CARD ERROR"; return groove::SaveResult::Failed;
+  }
+}
+
 GrooveApp::HeapRoom GrooveApp::Heap() const
 {
   HeapRoom room;
@@ -1664,6 +1689,16 @@ void GrooveApp::SetLogging(bool on)
 bool GrooveApp::Logging() const
 {
   return os::storage::LogEnabled();
+}
+
+void GrooveApp::SetScreenTheme(os::storage::Theme theme)
+{
+  os::storage::SetScreenTheme(theme);
+}
+
+os::storage::Theme GrooveApp::ScreenTheme() const
+{
+  return os::storage::ScreenTheme();
 }
 
 groove::SystemInfo GrooveApp::QuerySystem() const

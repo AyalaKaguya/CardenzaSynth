@@ -77,6 +77,34 @@ void GridRipple(Gfx& g, Animator& animator, std::size_t index, Color color)
 constexpr std::array<int, 4> kDrumDensity{{16, 8, 4, 2}};
 int DrumDensity(std::uint8_t velocity) { return kDrumDensity[DrumRowForVelocity(velocity)]; }
 
+int FloorDiv(int value, int divisor) { return value >= 0 ? value / divisor : -((-value + divisor - 1) / divisor); }
+
+// HITS on screen: a note that fires more than once in its step is cut into its hits, a piece for each
+// (as long as it sounds, SequencerHitGatePulses: up to the next hit, the last one to the end of a
+// longer note), two black pixels between them (one would read as a hole of the dither, and a run of
+// rolled notes as one band). `draw(piece, attack)` gets each piece on a row of
+// `column` pixels a step from `x0`, clipped to `right`, from a note starting `startPulse` pulses after
+// x0 (negative: carried over from the page before); `attack` when the piece's own start is on the
+// row: that column is the hit, drawn solid so it reads through any dither.
+template <typename Draw>
+void ForEachHit(int x0, int right, int column, int startPulse, std::uint16_t lengthPulses, std::uint8_t hits, int y, int height, Draw draw)
+{
+  const int step = synth::kSequencerPulsesPerStep;
+  const int spacing = synth::SequencerHitSpacingPulses(hits);
+  const std::uint16_t length = std::max<std::uint16_t>(1, lengthPulses);
+  for (std::uint8_t hit = 0; hit < hits; ++hit)
+  {
+    const int from = startPulse + hit * spacing;
+    const int left = x0 + FloorDiv(from * column, step);
+    int end = x0 + FloorDiv((from + synth::SequencerHitGatePulses(hits, hit, length)) * column, step) - 1;
+    if (hit + 1 < hits) end = std::min(end, x0 + FloorDiv((from + spacing) * column, step) - 2);
+    end = std::max(end, left + 1);
+    const int shownLeft = std::max(left, x0);
+    const int shownEnd = std::min(end, right);
+    if (shownEnd > shownLeft) draw(Rect{shownLeft, y, shownEnd - shownLeft, height}, left >= x0);
+  }
+}
+
 // The kit's eight drums in one row, like the eight pad columns on the keyboard (a column is a drum).
 // With fill (VOICE) they take the whole area, as the keyboard of a melodic track does, less the room
 // a hit kicks them up; otherwise (the KIT page's graphic) a strip of at most 24 px in its middle.
@@ -790,7 +818,7 @@ void PaintMixBadge(Gfx& g, const Controller& controller, Animator& animator, con
   const auto& host = controller.HostView();
   const std::array<bool, 3> states{{host.TrackMuted(track), host.TrackSoloed(track), host.Sequencer().TrackEnabled(track)}};
   static constexpr std::array<const char*, 3> names{{"MUTE", "SOLO", "SEQ"}};
-  static constexpr std::array<Color, 3> colors{{kRec, kFn, kDim}};
+  const std::array<Color, 3> colors{{kRec, kFn, kDim}};
   const float pop = fx::Decay(animator.Now(), animator.MixToggledAt(track, kind), 300);
   Rect rect = bounds;
   if (pop > 0.0f)
@@ -1133,7 +1161,8 @@ void PaintPianoRoll(Gfx& g, const Controller& controller, Animator& animator, co
       const std::size_t count = sequencer.StepNoteEvents(state.track, first - kGridCount + step, before);
       for (std::size_t index = 0; index < count; ++index)
       {
-        const std::size_t end = pulseStart + before[index].microstep * synth::kSequencerPulsesPerMicrostep + before[index].lengthPulses;
+        const std::size_t end = pulseStart + before[index].microstep * synth::kSequencerPulsesPerMicrostep +
+                                synth::SequencerNoteSoundingPulses(before[index].hits, before[index].lengthPulses);
         if (end <= first * synth::kSequencerPulsesPerStep) continue;
         carried[step][carriedCounts[step]++] = before[index];
         low = std::min<int>(low, before[index].note);
@@ -1249,7 +1278,28 @@ void PaintPianoRoll(Gfx& g, const Controller& controller, Animator& animator, co
     for (int y = y0; y < y0 + height; y += 2) g.Pixel(x0 + static_cast<int>(step) * column, y, step % 16 == 0 ? kDim : kShade);
   for (std::size_t step = 0; step < steps; ++step)
     if (seq.steps[step].held) g.Dither(Rect{x0 + static_cast<int>(step) * column, y0, column, height}, kInk, 3);
-  // The notes.
+  // The notes. A note with HITS is cut into them (ForEachHit), in the same style as a whole bar: on a
+  // lit row or selected step solid and cut out of the light, else as dense as it is loud, each hit
+  // starting with a solid column.
+  const int rollRight = x0 + column * static_cast<int>(steps);
+  const auto drawHits = [&](int startPulse, const synth::SynthSequencer::StepNoteView& note, bool strong) {
+    const int y = rowY(note.note);
+    const int height = std::max(1, rowHeight - 1);
+    if (strong)
+    {
+      int spanLeft = rollRight, spanRight = x0;
+      ForEachHit(x0, rollRight, column, startPulse, note.lengthPulses, note.hits, y, height, [&](const Rect& piece, bool) {
+        spanLeft = std::min(spanLeft, piece.x);
+        spanRight = std::max(spanRight, piece.x + piece.width);
+      });
+      if (spanRight > spanLeft) g.Fill(Rect{spanLeft, y - 1, spanRight - spanLeft, height + 2}, kBlack);
+    }
+    ForEachHit(x0, rollRight, column, startPulse, note.lengthPulses, note.hits, y, height, [&](const Rect& piece, bool attack) {
+      if (strong) g.Fill(piece, trackColor);
+      else g.Dither(piece, trackColor, 6 + note.velocity * 10 / 127);
+      if (attack) g.Fill(Rect{piece.x, piece.y, 1, piece.height}, trackColor);
+    });
+  };
   for (std::size_t step = 0; step < kGridCount; ++step)
   {
     const std::size_t pulseStart = step * synth::kSequencerPulsesPerStep;
@@ -1257,7 +1307,13 @@ void PaintPianoRoll(Gfx& g, const Controller& controller, Animator& animator, co
     {
       const auto& note = carried[step][index];
       if (note.note < low || note.note > high) continue;
-      const int inPage = static_cast<int>(pulseStart + note.microstep * synth::kSequencerPulsesPerMicrostep + note.lengthPulses) - static_cast<int>(kGridCount * synth::kSequencerPulsesPerStep);
+      const int start = static_cast<int>(pulseStart + note.microstep * synth::kSequencerPulsesPerMicrostep) - static_cast<int>(kGridCount * synth::kSequencerPulsesPerStep);
+      if (note.hits > 1)
+      {
+        drawHits(start, note, pressed[note.note & 0x7F] != 0);
+        continue;
+      }
+      const int inPage = start + static_cast<int>(note.lengthPulses);
       const Rect bar{x0, rowY(note.note), std::min(inPage * column / static_cast<int>(synth::kSequencerPulsesPerStep), column * static_cast<int>(steps)), std::max(1, rowHeight - 1)};
       // On a lit row the bar is cut out of the light, solid in the track's color.
       if (pressed[note.note & 0x7F] != 0)
@@ -1275,6 +1331,12 @@ void PaintPianoRoll(Gfx& g, const Controller& controller, Animator& animator, co
     {
       const auto& note = notes[step][index];
       if (note.note < low || note.note > high) continue;
+      if (note.hits > 1)
+      {
+        drawHits(static_cast<int>(step * synth::kSequencerPulsesPerStep + note.microstep * synth::kSequencerPulsesPerMicrostep), note,
+                 pressed[note.note & 0x7F] != 0 || seq.steps[step].held);
+        continue;
+      }
       const int x = x0 + static_cast<int>(step) * column + static_cast<int>(note.microstep) * column / synth::kSequencerMicrostepCount;
       const int width = std::max(2, static_cast<int>(note.lengthPulses) * column / synth::kSequencerPulsesPerStep - 1);
       const Rect bar{x, rowY(note.note), std::min(width, x0 + column * static_cast<int>(steps) - x), std::max(1, rowHeight - 1)};
@@ -1469,9 +1531,28 @@ void PaintStepMachine(Gfx& g, const Controller& controller, Animator& animator, 
       const std::uint8_t held = heldVelocity[note.note & 0x7F];
       const bool strong = held != 0 || row == chosen || seq.steps[static_cast<std::size_t>(step)].held;
       if (strong) g.Fill(Rect{mark.x - 1, mark.y - (drums ? 1 : 0), mark.width + 2, mark.height + (drums ? 2 : 0)}, kBlack);
-      if (head) g.Fill(mark, kPlay);
-      else if (drums) g.Dither(mark, trackColor, held != 0 ? std::max(8, DrumDensity(note.velocity)) : DrumDensity(note.velocity));
-      else g.Dither(mark, trackColor, strong ? 16 : 6 + note.velocity * 10 / 127);
+      const int density = head ? 16 : drums ? (held != 0 ? std::max(8, DrumDensity(note.velocity)) : DrumDensity(note.velocity))
+                                            : (strong ? 16 : 6 + note.velocity * 10 / 127);
+      const Color ink = head ? kPlay : trackColor;
+      if (note.hits > 1 && drums)
+      {
+        // HITS in a drum's 4-pixel mark: no room to cut it in time, so its hits are stacked, a stroke
+        // each (the tremolo strokes of a roll), black between them: as many strokes as hits.
+        g.Fill(mark, kBlack);
+        for (int hit = 0; hit < note.hits; ++hit)
+        {
+          const int from = mark.y + hit * (mark.height + 1) / note.hits;
+          const int to = mark.y + (hit + 1) * (mark.height + 1) / note.hits - 1;
+          g.Fill(Rect{mark.x, from, mark.width, 1}, ink);
+          if (to - from > 1) g.Dither(Rect{mark.x, from + 1, mark.width, to - from - 1}, ink, density);
+        }
+        continue;
+      }
+      // A melodic row is too thin for the stack: the mark is cut once, a note that repeats (a sliver off
+      // the beat one pixel wider for it, still inside its step); how many, the GRID beside shows.
+      const Rect shown = note.hits > 1 && mark.width < 3 ? Rect{mark.x, mark.y, 3, mark.height} : mark;
+      g.Dither(shown, ink, density);
+      if (note.hits > 1) g.Fill(Rect{shown.x + shown.width / 2, shown.y, 1, shown.height}, kBlack);
     }
   }
   if (playingHere)
@@ -1502,17 +1583,28 @@ void PaintStepMachine(Gfx& g, const Controller& controller, Animator& animator, 
     const auto& info = seq.steps[index];
     std::uint8_t velocity = 0;
     std::uint8_t late = 0;
+    std::uint8_t hits = 1;
     for (std::size_t slot = 0; slot < counts[index] && picked >= 0; ++slot)
       if (notes[index][slot].note == picked && velocity == 0)
       {
         velocity = std::max<std::uint8_t>(notes[index][slot].velocity, 1);
         late = notes[index][slot].microstep;
+        hits = notes[index][slot].hits;
       }
     const bool marked = info.held;  // selected: inverse
     const float flash = info.playing ? fx::Decay(now, animator.StepPlayedAt(index), kStepFlashMs) : 0.0f;
     if (marked) g.Fill(cell, kInk);
     else if (velocity != 0) g.Dither(cell, trackColor, DrumDensity(velocity));
     else if (info.hasEvents) g.Fill(Rect{cell.x, cell.y + cell.height - 2, cell.width, 2}, kDim);
+    // HITS: the step cut into them, a black column before each later one; each starts with a solid
+    // column, which reads through the lightest dither.
+    if (velocity != 0 && hits > 1)
+      for (int hit = 0; hit < hits; ++hit)
+      {
+        const int at = cell.x + cell.width * hit / hits;
+        if (hit > 0) g.Fill(Rect{at - 1, cell.y, 1, cell.height}, kBlack);
+        if (!marked) g.Fill(Rect{at, cell.y, 1, cell.height}, trackColor);
+      }
     if (info.playing && !marked)
     {
       g.Dither(Rect{cell.x + 1, cell.y + 1, cell.width - 2, cell.height - 2}, kPlay, std::max(3, static_cast<int>(flash * 16.0f)));

@@ -81,7 +81,8 @@ All projects on the SD card, by name; the open one is marked `>`.
 - <Key k="ADD" /> / <Key k="SUB" /> choose (<Key k="FN+ADD" /> / <Key k="FN+SUB" /> 8 at a time), <Key k="OK" /> loads.
 - With unsaved changes it asks first: <Key k="OK" /> loads anyway, <Key k="ESC" /> keeps your work.
 - A loaded project opens on T1 and brings its own keyboard, chords and arpeggiators (a project saved by older firmware has none and keeps the current ones).
-- LOAD on the PROJECT page and LOAD in the FN menu lead here too. The list also shows the projects of release 0.1.0 (see [Folders on the SD card](./projects.mdx#storage-layout)).
+- LOAD on the PROJECT page and LOAD in the FN menu lead here too. Release 0.1.0 kept its projects in the same folder, so they are in the list (see [Folders on the SD card](./projects.mdx#storage-layout)); saved again they become format 7, which 0.1.0 cannot open.
+- Without an SD card the list is empty (see [No card, or a bad card](./projects.mdx#storage-card)).
 
 <Keywords k="files, load project, open project, project list, load, open, 载入工程, 打开工程, 工程列表" />
 
@@ -110,7 +111,7 @@ How the pads play, for all four tracks. The keyboard is saved with the project; 
 | OCTAVE | −3 … +3 | [Octave](./play.mdx#play-octave) |
 | VELO | 1–127 (default 110), the velocity of every pad | [Velocity](./play.mdx#play-velocity) |
 | LOCK | OFF / MUTE / SNAP | [Scale lock](./play.mdx#play-lock) |
-| SELECT | ONE: a GRID tap in ROLL goes to one step · MULTI: it selects several | [Selecting and editing](./seq.mdx#seq-edit) |
+| SELECT | how a GRID tap selects steps on the SEQ note page (ROLL, STEP, drums): ONE: one step, a tap elsewhere moves there · MULTI: each tap adds a step or takes it out | [Selecting and editing](./seq.mdx#seq-edit) |
 
 Both settings pages (KEYS and SYSTEM) work the same way:
 
@@ -138,23 +139,25 @@ Chord and arpeggiator are no longer SETUP pages: every track has its own, on the
   <Mark at="cell:1,1">VOLUME (focused)</Mark>
   <Mark at="cell:1,2">KEY LED</Mark>
   <Mark at="cell:1,3">SCREEN</Mark>
-  <Mark at="8,43,200,58">Device · audio backend · SD card · memory · build</Mark>
+  <Mark at="cell:1,4">LOG</Mark>
+  <Mark at="8,71,224,44">Version · SD card · memory · build</Mark>
   <KeyMark keys="G1">Focus: fully lit</KeyMark>
-  <KeyMark keys="G2 G3">Settings: half lit</KeyMark>
-  <Caption>SETUP SYSTEM: three device settings and a short report of the device.</Caption>
+  <KeyMark keys="G2 G3 G4">Settings: half lit</KeyMark>
+  <Caption>SETUP SYSTEM: four device settings and a short report of the device.</Caption>
 </Shot>
 
 | Setting | Range |  |
 |---|---|---|
-| VOLUME | 0–100 (default 50), steps of 2 | output volume; the same as MASTER on [MIX: the mixer](./tape.mdx#tape-mix) and <Key k="FN" /> + <Key k="7" /> / <Key k="U" /> anywhere ([Quick controls: BPM, volume, octave](./fn.mdx#fn-quick)) |
+| VOLUME | 0–100 (default 70), steps of 2 | output volume, following the ear: 0 is silent, 1 about −59 dB, 50 about −21 dB, 70 about −10 dB, 100 full; wide steps at the quiet end, fine ones at the loud end. The same as MASTER on [MIX: the mixer](./tape.mdx#tape-mix) and <Key k="FN" /> + <Key k="7" /> / <Key k="U" /> anywhere ([Quick controls: BPM, volume, octave](./fn.mdx#fn-quick)) |
 | KEY LED | 0–15 (default 15) | overall brightness of the key lights; while it is focused the pads show the brightness ramp ([Brightness and the light test](./lights.mdx#lights-ramp)) |
-| SCREEN | 4–100 % (default 70 %) | screen brightness |
+| SCREEN | 3–100 % (default 70 %) | screen brightness |
+| LOG | ON / OFF (default ON) | writes the device's log to the SD card, for when something goes wrong ([The log](./projects.mdx#storage-log)) |
 
-These are device settings: every app on the Cardenza shares them, they are kept in `System/settings.cfg` and no project carries them.
+These are device settings: every app on the Cardenza shares them, they are kept in `CardenzaSynth/Settings/system.cfg` on the SD card and no project carries them.
 
-The report below is typed out line by line each time you come in: the device, the audio backend, the SD card (READY or NOT FOUND, see [No card, or a bad card](./projects.mdx#storage-card)), free memory and the firmware's build date.
+The report below is typed out line by line each time you come in: the firmware VERSION, the SD CARD (READY or NOT FOUND, see [No card, or a bad card](./projects.mdx#storage-card)), free MEMORY (on the device: internal RAM, its lowest point and the PSRAM) and the BUILD (the firmware's commit and when it was built).
 
-<Keywords k="system, volume, master volume, key led, screen brightness, brightness, sd card, device info, build, 屏幕亮度, 系统" />
+<Keywords k="system, volume, master volume, key led, screen brightness, brightness, log, sd card, device info, version, firmware version, build, 屏幕亮度, 系统" />
 
 ## Every setting {#setup-ref}
 

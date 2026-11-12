@@ -35,7 +35,8 @@ sidebar_position: 16
 | <Key k="CTRL" /> + <Key k="ADD" /> / <Key k="SUB" /> | 下一页 / 上一页 |
 | <Key k="FN" /> 单击 | 打开 / 关闭当前画面的菜单（常驻；按 GRID 执行一项后关闭） |
 | <Key k="hold FN" /> | 按住期间显示同一个菜单；下面的字母和两侧按键是它的第二功能 |
-| <Key k="ADD" /> <Key k="SUB" /> | 加 / 减，在列表里移动；按住连发并加速 |
+| <Key k="ADD" /> <Key k="SUB" /> | 加 / 减，在列表里移动；按住连发并加速；SEQ 音符页没有选中的步时：GRID 翻到下一页 / 上一页 |
+| SEQ 音符页的 <Key k="GRID" /> | 单击：选中一步并保持（再点一次放开）；按住：按住期间选中；按着 PADS 时：把这些音放进这一步，或去掉 |
 | <Key k="OK" /> | 确认、进入、开关；SEQ 音符页单击切换 ROLL / STEP，按住打开 RECORD，有选中的步时循环 NOTE → LEN → VEL → TIME |
 | <Key k="PLAY" /> | 播放 / 停止 |
 | HOME 侧键 | Groovebox 不用它（全部停止是 <Key k="FN+ESC" />） |
@@ -52,7 +53,7 @@ sidebar_position: 16
 | <Key k="FN+ESC" /> | 全部停止：音序、所有 ARP 和所有发声 |
 | <Key k="FN+TAB" /> | 上一轨 |
 | <Key k="FN+CTRL" /> | 上一页 |
-| <Key k="FN+ADD" /> / <Key k="FN+SUB" /> | 大步调整（BPM 一次 10，设置 ×5）；SEQ 音符页：长 Pattern 的下一页 / 上一页；列表里：一次一页 |
+| <Key k="FN+ADD" /> / <Key k="FN+SUB" /> | 大步调整（BPM 一次 10，设置 ×5）；SEQ 音符页没有选中的步时：下一个 / 上一个 Pattern；列表里：一次一页 |
 | <Key k="FN+OK" /> | 这个画面的第二个 OK：RESET（恢复默认）、SCOPE（SEQ）、ADD TO SONG（SESSION）、SONG / LOOP（SONG）；采样列表里：改名 / 删除 |
 | <Key k="FN+PLAY" /> | 录音开关（REC） |
 | <Key k="FN+C" /> <Key k="FN+V" /> | 复制 / 粘贴（选中的步、Pattern 或编排行） |
@@ -90,7 +91,7 @@ sidebar_position: 16
 
 | 名词 | 意思 |
 |---|---|
-| 轨道 Track | 四条之一，每条有一个音源、自己的 Pattern、和弦与 ARP；开机在 T2 |
+| 轨道 Track | 四条之一，每条有一个音源、自己的 Pattern、和弦与 ARP；开机在 T1 |
 | 音源 Engine | 发声的合成器：DRUMS、JUNO、DX7、SAMPLER |
 | 音色 Preset / Sound | 一个音源的一组参数 |
 | 步 Step | 音序器的最小格子，1/16 音符 |
@@ -101,7 +102,7 @@ sidebar_position: 16
 | SETUP | 场景 0：工程、文件和所有轨道共用的设置；按住 ESC + GRID 第 1 列进入 |
 | FN 菜单 | 当前画面能做的事，按住 FN 时铺在 GRID 上（单击 FN 常驻） |
 | Take | 无感录制记下的一段弹奏 |
-| 自动保存 Autosave | 工作状态存在设备自己的存储里，随时可以拔电 |
+| 自动保存 Autosave | 工作状态自动存在 SD 卡上，随时可以拔电 |
 | GRID | 右侧 4×4，对应屏幕中间的 4×4 |
 | PADS 演奏区 | 中间 4×8，永远弹当前轨 |
 | 发送 Send | 送到总线延迟 / 混响的量 |

@@ -4,9 +4,9 @@ sidebar_position: 7
 
 # 采样
 
-<Icon name="sample" /> SAMPLER 采样器（默认 <Track n="4" />）播放一段 WAV 录音。可以从 SD 卡载入，也可以用内置麦克风录。所有应用共用卡上的 `Cardenza/Shared/Samples` 目录。
+<Icon name="sample" /> SAMPLER 采样器（默认 <Track n="4" />）播放一段 WAV 录音。可以从 SD 卡载入，也可以用内置麦克风录。所有应用共用卡上的 `CardenzaSynth/Samples` 目录。
 
-支持的文件：单声道 16 位 PCM WAV，采样率 8–96 kHz，最长 5 分钟。短采样（约 186 ms 以内，鼓声之类）放在内存里，更长的直接从卡上边读边播。
+支持的文件：单声道 16 位 PCM WAV，采样率 8–96 kHz，最长 5 分钟。2 秒以内的采样放在内存里，更长的直接从卡上边读边播。
 
 <Keywords k="采样, 采样器, 麦克风, 录音, 人声, 实地录音, sample, sampling, field recording, sampler, microphone, record audio, wav" />
 
@@ -35,7 +35,7 @@ SAMPLER 轨的每一页，FN 菜单里还有 SAMPLES（列表）、RECORD（录�
   <Step keys="OK" shot="sampler-rec" at="8,72,222,12"><Key k="OK" /> 开始，再按 <Key k="OK" /> 停止。录音时显示输入电平。</Step>
 </Strip>
 
-- 有卡时直接录进卡上的文件（本应用目录下的 `Session/take-<轨道>.wav`），大约每秒落盘一次：断电最多丢最后一秒。卡满会停止录音并保留已录的部分（CARD FULL）。没有卡时放进剩余内存，只能录几秒。
+- 有卡时直接录进卡上的文件（`CardenzaSynth/Session/take-<轨道>.wav`），大约每秒落盘一次：断电最多丢最后一秒。卡满会停止录音并保留已录的部分（CARD FULL）。没有卡时放进剩余内存，只能录几秒。
 - 麦克风和喇叭共用一个时钟引脚：录音时喇叭静音，音序器照常走。
 - 麦克风只在录音界面开着时工作：离开界面（换场景、换轨）就取消这次录音。录音中按 <Key k="ESC" /> 也是取消。
 - 没保存的录音断电或切到别的应用也不会丢：再打开时录音界面带着它回来（UNSAVED TAKE IS BACK）。

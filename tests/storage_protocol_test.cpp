@@ -285,6 +285,36 @@ void TestDeviceSettings()
   std::cout << "device settings passed\n";
 }
 
+void TestScreenTheme()
+{
+  // sys.theme: a device setting stored by name, DARK unless someone picks another.
+  ResetCard();
+  ApplyDeviceSettings();
+  assert(ScreenTheme() == Theme::Dark && kDefaultTheme == Theme::Dark && !SystemSettings().Has("sys.theme"));
+  SetScreenTheme(Theme::Light);
+  assert(ScreenTheme() == Theme::Light);
+  assert(FlushAllSettings() && ReadText(SystemSettingsPath()).find("sys.theme=light\n") != std::string::npos);
+  // It comes back from the card at the next start.
+  ReloadAllSettings();
+  ApplyDeviceSettings();
+  assert(ScreenTheme() == Theme::Light);
+  SetScreenTheme(Theme::Retro);
+  assert(FlushAllSettings() && ReadText(SystemSettingsPath()).find("sys.theme=retro\n") != std::string::npos);
+  // Read tolerantly: a name in any case; anything else (a number, an unknown name) is DARK.
+  const auto readBack = [](const std::string& value) {
+    WriteText(SystemSettingsPath(), "sys.theme=" + value + "\n");
+    ReloadAllSettings();
+    ApplyDeviceSettings();
+    return ScreenTheme();
+  };
+  assert(readBack("Light") == Theme::Light && readBack("RETRO") == Theme::Retro && readBack("dark") == Theme::Dark);
+  assert(readBack("sepia") == Theme::Dark && readBack("2") == Theme::Dark && readBack("") == Theme::Dark);
+  // A value outside the list is stored as the default.
+  SetScreenTheme(static_cast<Theme>(7));
+  assert(ScreenTheme() == Theme::Dark && SystemSettings().GetString("sys.theme") == "dark");
+  std::cout << "screen theme passed\n";
+}
+
 void TestLegacyLayoutsRemainUntouched()
 {
   ResetCard();
@@ -384,6 +414,7 @@ int main()
   TestAtomicWriteRecovery();
   TestMissingCardRamOnly();
   TestDeviceSettings();
+  TestScreenTheme();
   TestLegacyLayoutsRemainUntouched();
   TestRunWithoutCard();
   assert(!fs::exists(Internal()));

@@ -73,9 +73,10 @@ public:
     std::uint8_t velocity = 0;
     std::uint16_t lengthPulses = 0;
     std::uint8_t microstep = 0;
+    std::uint8_t hits = 1;
   };
   std::size_t StepNoteEvents(std::size_t track, std::size_t step, std::array<StepNoteView, 8>& notes) const;
-  // Step recording: the step's notes become exactly these (one step long, on the grid).
+  // Step recording: the step's notes become exactly these (one step long, on the grid, one hit).
   bool SetStepNotes(std::size_t track, std::size_t step, const std::uint8_t* notes, std::size_t count, std::uint8_t velocity);
   // Notes held on the pads and a step tapped (MatrixOS): all or none, a chord as one. When the step of
   // the track's active pattern holds any of them they all come out and none goes in, else they all go
@@ -89,6 +90,7 @@ public:
   // Moves one note within its step, to another microstep. False when it is not there, or another of
   // the same pitch already is.
   bool MoveNote(std::size_t track, std::size_t pattern, std::size_t step, std::uint8_t note, std::uint8_t fromMicrostep, std::uint8_t toMicrostep);
+  // InsertNote (above) writes a plain note, one hit: a take lays down what was played.
   bool InsertNote(std::size_t track, std::size_t pattern, std::size_t step, std::uint8_t microstep, std::uint8_t note,
                   std::uint8_t velocity, std::uint16_t lengthPulses);
   // Pulses processed since playback started (0 while stopped): where a played note sits in time.
@@ -183,12 +185,26 @@ public:
   // that holds any of them loses them all and gains none, one that holds none gains them all, each at
   // `velocity` (0: the track's new-note velocity). False when no step is selected or no note given.
   bool ToggleNotesOnSelectedSteps(const std::uint8_t* notes, std::size_t count, std::uint8_t velocity = 0);
+  // Whether a selected step holds any of these notes (a pad's, its chord as one: the pad is lit).
+  // `others`, when given, gets every other note those steps hold: where a move of them must not land.
+  bool SelectedStepsHoldAny(const std::uint8_t* notes, std::size_t count, std::array<bool, 128>* others = nullptr) const;
+  // A held pad's notes moved (ADD / SUB): on each selected step that holds any of from[0..count),
+  // from[i] becomes to[i], keeping its velocity, length and timing (a step holding some of them moves
+  // those). Nothing changes when such a step already holds one of `to` besides them. True when a note
+  // moved.
+  bool MoveNotesOnSelectedSteps(const std::uint8_t* from, const std::uint8_t* to, std::size_t count);
   void SetEditLane(SequencerEditLane lane);
+  SequencerEditLane EditLane() const;
   void CycleEditLane();
-  void CycleNoteScope();
-  // Relative edit of the current lane for the scoped note (or every note) of each selected
-  // step. Returns true when any value changed.
+  // Relative edit of the current lane for every note of each selected step. Returns true when any
+  // value changed.
   bool AdjustSelectedSteps(int delta, bool coarse);
+  // The same edit for these notes only (a held pad's, its chord as one), on each selected step that
+  // holds any of them: what ADD / SUB do while a lit pad is held. True when a value changed.
+  bool AdjustNotesOnSelectedSteps(const std::uint8_t* notes, std::size_t count, int delta, bool coarse);
+  // The current lane's value ("96" on VEL) of the first of these notes on the selected steps; empty
+  // when none holds them.
+  std::string NotesLaneValue(const std::uint8_t* notes, std::size_t count) const;
 
   // Song (arrangement) mode. With the switch on and at least one row, Play() starts at the cued
   // row. Each row applies at a bar line: every track switches to the row's pattern (-1 leaves the
@@ -244,12 +260,30 @@ public:
     std::uint8_t velocity = 110;
     std::uint16_t lengthPulses = kSequencerPulsesPerStep;
     std::uint8_t microstep = 0;
-    bool active = false;
+    // One byte for whether the slot holds a note and for its HITS less one (0..3: it fires 1..4 times
+    // in its step), so a page of steps stays 768 bytes. HITS less one: zero, what a cleared slot holds,
+    // is a plain note (and 1..4 stored as is would need a third bit).
+    bool active : 1;
+    std::uint8_t extraHits : 2;
+
+    constexpr NoteEvent() : active(false), extraHits(0) {}
+    constexpr NoteEvent(std::uint8_t pitch, std::uint8_t noteVelocity, std::uint16_t length, std::uint8_t noteMicrostep, bool isActive,
+                        std::uint8_t hits = 1)
+        : note(pitch), velocity(noteVelocity), lengthPulses(length), microstep(noteMicrostep), active(isActive),
+          extraHits(static_cast<std::uint8_t>(ClampSequencerHits(hits) - 1))
+    {
+    }
+    constexpr std::uint8_t Hits() const { return static_cast<std::uint8_t>(extraHits + 1); }
+    void SetHits(int hits) { extraHits = static_cast<std::uint8_t>(ClampSequencerHits(hits) - 1) & 3u; }
   };
+  static_assert(kSequencerMaxHits - 1 <= 3, "HITS less one must fit NoteEvent::extraHits' two bits.");
 
   struct StepData {
     std::array<NoteEvent, 8> notes{};
   };
+  // A page of steps (StepStore) is 16 of these in PSRAM: 768 bytes.
+  static_assert(sizeof(NoteEvent) == 6, "A NoteEvent is six bytes: HITS lives in the spare bits of `active`'s byte.");
+  static_assert(sizeof(StepData) == 48, "A step is 48 bytes, a page of 16 steps 768.");
 
   // The steps of a pattern, stored one GRID page at a time. A page costs its 768 bytes only once
   // something is written on it (256 steps flat would be 12 KB per pattern, and the board has no
@@ -325,6 +359,8 @@ public:
     std::size_t activePattern = 0;
     std::uint8_t defaultVelocity = 110;
     std::uint16_t defaultLengthPulses = kSequencerPulsesPerStep;
+    // HITS a note written by hand starts with (NEW HITS, 1..kSequencerMaxHits); recording writes 1.
+    std::uint8_t defaultHits = 1;
     bool enabled = true;
     bool muted = false;
     // Each pattern's own length, 1..kSequencerMaxSteps.
@@ -417,7 +453,6 @@ private:
                                 std::size_t& count);
   void CollectAllNoteOffsLocked(std::array<PendingMidiEvent, kMaxPendingMidiEvents>& events, std::size_t& count);
   void StopAuditionLocked(std::array<PendingMidiEvent, kMaxPendingMidiEvents>& events, std::size_t& count);
-  void AuditionScopedNoteLocked(std::array<PendingMidiEvent, kMaxPendingMidiEvents>& events, std::size_t& count);
 
   void ToggleNoteInStepLocked(StepData& step, std::uint8_t note, TrackData& track, std::size_t stepIndex, std::uint8_t velocity = 0);
   // A group of notes (given[note]: a pad's chord, the pads held) toggled in a step all or none: any of
@@ -429,19 +464,25 @@ private:
   void ApplyMicrostepToHeldStepsLocked(std::uint8_t microstep);
   void ClearStepLocked(StepData& step);
   void QuantizeStepLocked(StepData& step, std::size_t stepIndex);
-  void CycleNoteScopeLocked();
-  void NormalizeScopeLocked();
+  // Gives back the memory of the active pattern's pages that edits emptied.
+  void ReleaseEmptyPagesLocked();
   void PopulateEditValueStateLocked(SequencerUiState& state, const StepData* step) const;
   PatternData& ActivePatternLocked(TrackData& track);
   const PatternData& ActivePatternLocked(const TrackData& track) const;
   const StepData* PrimaryHeldStepLocked() const;
   std::size_t ActiveNoteCount(const StepData& step) const;
-  std::size_t ScopedNoteSlot(const StepData& step) const;
-  const NoteEvent* ScopedNoteLocked(const StepData& step) const;
   std::uint16_t ClampLengthForStepMicrostep(std::size_t stepIndex, std::uint8_t microstep, std::uint16_t lengthPulses) const;
   static std::uint16_t ClampLengthInPattern(std::size_t patternSteps, std::size_t stepIndex, std::uint8_t microstep, std::uint16_t lengthPulses);
-  std::string ScopeLabelLocked(const StepData* step) const;
   std::string ValueLabelLocked(const StepData* step) const;
+  // The edit lanes, in one place: the current lane's edit of some notes of a step (its slots), which
+  // every way of editing a lane goes through (AdjustSelectedSteps, AdjustNotesOnSelectedSteps), and a
+  // note's value on that lane. A new lane is added here (and to CycleEditLane and its label). True
+  // when a value changed.
+  bool AdjustLaneLocked(StepData& step, std::size_t stepIndex, std::array<std::size_t, 8> slots, std::size_t slotCount, int delta,
+                        bool coarse);
+  std::string LaneValueLocked(const NoteEvent& note) const;
+  static std::uint16_t AdjustedLength(std::uint16_t current, int delta, bool coarse);
+  static std::uint8_t AdjustedHits(std::uint8_t current, int delta, bool coarse);
 
   static std::size_t TrackStepCountOf(const TrackData& track);
   std::size_t ViewPageLocked(std::size_t trackIndex) const;
@@ -518,7 +559,6 @@ private:
   std::array<PlaybackNote, kMaxPlaybackNotes> playbackNotes_{};
   std::size_t activeTrack_ = 0;
   SequencerEditLane editLane_ = SequencerEditLane::Note;
-  int noteScopeIndex_ = -1;
   bool playing_ = false;
   std::size_t playbackStep_ = 0;
   std::uint64_t absolutePulse_ = 0;

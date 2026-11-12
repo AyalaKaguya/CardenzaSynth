@@ -80,7 +80,7 @@ sidebar_position: 2
 | <Key k="PLAY" /> | 空格 | 播放 / 停止；<Key k="FN+PLAY" /> 开关实时录音 |
 
 - 按住 <Key k="TAB" /> 时 <Key k="ADD" /> / <Key k="SUB" /> 是下一条 / 上一条轨道；按住 <Key k="CTRL" /> 时是下一页 / 上一页。
-- 右侧色块上的图标说明 ADD、SUB 在这个画面做什么：+ −、列表里 ↑ ↓、横向 → ←（步、音源选择）。
+- 右侧色块上的图标说明 ADD、SUB 在这个画面做什么：调数值和在列表里移动都是 ▲ ▼（ADD 是上面的键，数值往大调、列表往上走），横向移动是 → ←（SEQ 音符页翻 GRID 的页、音源选择、按住 TAB 或 CTRL 时）。
 
 :::note
 
@@ -107,7 +107,7 @@ sidebar_position: 2
 右边 4×4 的 16 个键 = 屏幕中间的 4×4 格子。**屏幕上画的是什么，按下去就是什么：**
 
 <Strip>
-  <Step keys="G1" shot="seq-step" at="cell:1,1">音序器：16 格 = 16 步。Pattern 最长 256 步，GRID 一次显示其中一页 16 步。</Step>
+  <Step keys="G2" shot="seq-step" at="116,14,113,108">音序器：16 个键 = 16 步（STEP 视图里屏幕右边就是同一个 4×4）。Pattern 最长 256 步，GRID 一次显示其中一页 16 步。</Step>
   <Step keys="G1" shot="instr-juno-vcf" at="cell:1,1">乐器页：16 格 = 16 个参数，点一个就选中它。</Step>
   <Step keys="G6" shot="tape-mix" at="cells:1,2-4,2">MIX：每一列是一条轨道的选中、静音、独奏、音序开关。</Step>
 </Strip>

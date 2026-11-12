@@ -57,7 +57,7 @@ SCALE and ROOT on the KEYS page choose the scale and its root note (C–B). The 
   <Mark at="cell:1,4">OCTAVE</Mark>
   <Mark at="cell:2,1">VELO (velocity)</Mark>
   <Mark at="cell:2,2">LOCK (scale lock)</Mark>
-  <Mark at="cell:2,3">SELECT (ROLL: one step / several)</Mark>
+  <Mark at="cell:2,3">SELECT (SEQ steps: one / several)</Mark>
   <Mark at="cells:3,1-4,4">The current scale on the keyboard</Mark>
   <Caption>The KEYS page of SETUP.</Caption>
 </Shot>
@@ -104,13 +104,13 @@ The **CHORD** page in <Scene name="INSTR" /> turns one key into a chord. Each tr
 <Strip>
   <Step keys="hold CTRL + G2" shot="instr-chord" at="cell:1,1">In <Scene name="INSTR" /> hold <Key k="CTRL" /> and press G2: the track's CHORD page. CHORD is OFF.</Step>
   <Step keys="G1" shot="chord-on" at="cell:1,1 9,43,170,20">Tap CHORD: TRIAD. The picture shows which notes the key on the root plays (C3 PLAYS C3 E3 G3).</Step>
-  <Step keys="hold r2c1~C" shot="chord-held" at="cells:3,1-4,4">Press a key: three notes sound together, and the chord tones light up on the screen and on the pads.</Step>
+  <Step keys="hold r3c1~C" shot="chord-held" at="cells:3,1-4,4">Press a key: three notes sound together, and the chord tones light up on the screen and on the pads.</Step>
 </Strip>
 
 - **CHORD**: OFF / TRIAD / 7TH / MAJ / MIN / SUS4 / MAJ7 / MIN7 / DOM7 / POWER / OCTAVE. TRIAD and 7TH stack thirds in the current scale (keys outside it borrow a major triad / dominant seventh); the others are fixed chords.
 - **VOICING**: ROOT (root position) / INV1 (first inversion: lowest note up an octave) / INV2 (second inversion: the two lowest notes up an octave) / SPREAD (second note up an octave).
 - The second line shows the triad on every degree of the key (the font is upper case only: minor is written `D-`, diminished `BDIM`).
-- Chord tones are recorded into the sequencer like separate notes, and the ARP plays them one by one.
+- Recorded live, chord tones are separate notes, and the ARP plays them one by one. On the SEQ note page a key's chord goes into a step, or out of it, as one group (see [Selecting and editing](./seq.mdx#seq-edit)).
 
 <Shot name="chord-held">
   <Mark at="cell:1,1">CHORD</Mark>
@@ -118,7 +118,7 @@ The **CHORD** page in <Scene name="INSTR" /> turns one key into a chord. Each tr
   <Mark at="9,43,140,10">Notes the root key plays</Mark>
   <Mark at="9,53,170,10">Every degree of the key</Mark>
   <Mark at="cells:3,1-4,4">Chord tones (blue)</Mark>
-  <KeyMark keys="r2c1 r2c3 r2c5">Chord tones: fully lit</KeyMark>
+  <KeyMark keys="r3c1 r3c3 r3c5">Chord tones: fully lit</KeyMark>
   <Caption>Holding C: the three chord tones C E G are fully lit.</Caption>
 </Shot>
 
@@ -130,7 +130,7 @@ The **ARP** page in <Scene name="INSTR" />: hold a few keys and they sound one a
 
 <Strip>
   <Step keys="hold CTRL + G3" shot="instr-arp" at="cell:1,1">In <Scene name="INSTR" /> hold <Key k="CTRL" /> and press G3: the track's ARP page. ARP OFF dims the picture.</Step>
-  <Step keys="G1, hold r2c1~C + r2c3~E + r2c5~G" shot="arp-running" at="cells:3,1-4,4">Tap ARP: UP. Hold C E G: the notes play in turn from low to high.</Step>
+  <Step keys="G1, hold r3c1~C + r3c3~E + r3c5~G" shot="arp-running" at="cells:3,1-4,4">Tap ARP: UP. Hold C E G: the notes play in turn from low to high.</Step>
 </Strip>
 
 <Shot name="arp-running">
@@ -140,7 +140,7 @@ The **ARP** page in <Scene name="INSTR" />: hold a few keys and they sound one a
   <Mark at="cell:1,4">GATE</Mark>
   <Mark at="cell:2,1">HOLD: keeps going after release</Mark>
   <Mark at="cells:3,1-4,4">Playing order of 16 steps</Mark>
-  <KeyMark keys="r2c1 r2c3 r2c5">Held keys</KeyMark>
+  <KeyMark keys="r3c1 r3c3 r3c5">Held keys</KeyMark>
   <Caption>ARP UP: holding C E G, the three notes play in turn from low to high. Each bar is a step at its pitch, as wide as GATE; the white bar is the step sounding now.</Caption>
 </Shot>
 
@@ -162,7 +162,7 @@ The **ARP** page in <Scene name="INSTR" />: hold a few keys and they sound one a
 
 ## Drums {#play-drums}
 
-On a drum track (<Track n="1" /> by default) each pad **column** is one drum and the **row** is how hard: the top row hits hardest (velocity 127), then 100, 70, and the bottom row softest (40). A hit lights its column from the bottom up to the row it was played on. Drums do not arpeggiate and ignore scale, chords and VELO. Each drum's level is on the INSTR KIT page (see [DRUMS](./instr.mdx#engine-drums)).
+On a drum track (<Track n="1" /> by default) each pad **column** is one drum and the **row** is how hard: the top row hits hardest (velocity 127), then 100, 70, and the bottom row softest (40). At rest the pads are half lit; a held pad lights its column from the bottom up to its row, and a hit runs along the column, further the harder it is. On screen the pads show how hard by dither density, in four clear levels. Drums do not arpeggiate and ignore scale, chords and VELO. Each drum's level is on the INSTR KIT page (see [DRUMS](./instr.mdx#engine-drums)).
 
 <Keymap>
   <Group keys="r0c1-r3c1">Kick</Group>

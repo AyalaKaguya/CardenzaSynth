@@ -73,6 +73,12 @@ struct ProjectData {
   }
 };
 
+// The project format this build writes, and the newest it reads. Format 8 adds HITS and is read
+// already; it is written from the one format bump of the next test build on (kProjectWriteVersion = 8,
+// AGENT.md Storage Rules): until then a project saved, the autosave included, keeps no hits.
+inline constexpr int kProjectWriteVersion = 7;
+inline constexpr int kProjectReadVersion = 8;
+
 enum class ProjectResult { Ok, Exists, Invalid, StorageError, NoMemory };
 
 bool IsProjectNameValid(const std::string& name);
@@ -80,6 +86,10 @@ bool IsProjectNameValid(const std::string& name);
 std::vector<std::string> ListProjects();
 ProjectResult SaveProjectFile(const std::string& name, const ProjectData& project, bool overwrite);
 ProjectResult LoadProjectFile(const std::string& name, ProjectData& project);
+// Renames <from>.ccproj (and its backup) to <to>.ccproj on the card; nothing else changes. Exists: <to>
+// is another project's name; Invalid: a bad name, or no project <from>. A name that differs only in
+// case is renamed too (FAT would see the same file).
+ProjectResult RenameProjectFile(const std::string& from, const std::string& to);
 // The same format at an explicit path (the autosave). Saving replaces the file atomically
 // and keeps a backup until the new file is in place; loading falls back to that backup.
 ProjectResult SaveProjectFileAt(const std::string& path, const ProjectData& project);
@@ -87,5 +97,9 @@ ProjectResult LoadProjectFileAt(const std::string& path, ProjectData& project);
 // A hash of the bytes the project's file would hold, never 0: tells whether a file written from it would
 // change anything. Costs about what writing the file costs, without the card.
 std::uint32_t ProjectFingerprint(const ProjectData& project);
+#if defined(CARDENZA_PROJECT_TEST_HOOKS)
+// Test only: writes format `version` (7 or 8) instead of kProjectWriteVersion.
+ProjectResult SaveProjectFileAtVersionForTest(const std::string& path, const ProjectData& project, int version);
+#endif
 
 }  // namespace synth

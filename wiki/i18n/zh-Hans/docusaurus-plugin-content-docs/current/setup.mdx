@@ -81,7 +81,8 @@ SD 卡上的所有工程，按名字排列；当前打开的那个前面有 `>`�
 - <Key k="ADD" /> / <Key k="SUB" /> 选择（<Key k="FN+ADD" /> / <Key k="FN+SUB" /> 一次 8 个），<Key k="OK" /> 载入。
 - 有未保存的改动时先问：<Key k="OK" /> 照样载入，<Key k="ESC" /> 保留现在的。
 - 载入的工程从 T1 开始，并带回它自己的键盘、和弦和琶音（旧固件存的工程没有这些，保持现在的设置）。
-- PROJECT 页的 LOAD 和 FN 菜单里的 LOAD 也会跳到这里。0.1.0 版存的工程也在列表里（见 [SD 卡上的目录](./projects.mdx#storage-layout)）。
+- PROJECT 页的 LOAD 和 FN 菜单里的 LOAD 也会跳到这里。0.1.0 版的工程就在同一个文件夹里，所以也在列表里（见 [SD 卡上的目录](./projects.mdx#storage-layout)）；再保存一次就变成格式 7，0.1.0 打不开。
+- 没有 SD 卡时列表是空的（见 [没插卡或卡坏了](./projects.mdx#storage-card)）。
 
 <Keywords k="文件, 载入工程, 打开工程, 工程列表, 载入, 打开, 读档, files, load project, open project, project list, load" />
 
@@ -110,7 +111,7 @@ SD 卡上的所有工程，按名字排列；当前打开的那个前面有 `>`�
 | OCTAVE | −3 … +3 | [八度](./play.mdx#play-octave) |
 | VELO | 1–127（默认 110），演奏区每个键的力度 | [力度](./play.mdx#play-velocity) |
 | LOCK | OFF / MUTE / SNAP | [音阶锁定 LOCK](./play.mdx#play-lock) |
-| SELECT | ONE：ROLL 里点 GRID 走到一步 · MULTI：可以多选 | [选中与编辑](./seq.mdx#seq-edit) |
+| SELECT | SEQ 音符页（ROLL、STEP、鼓机）上单击 GRID 怎么选步：ONE：只选一步，点别处就换过去 · MULTI：每次单击加选一步，或把它移出 | [选中与编辑](./seq.mdx#seq-edit) |
 
 两个设置页（KEYS 和 SYSTEM）的操作一样：
 
@@ -138,23 +139,25 @@ SD 卡上的所有工程，按名字排列；当前打开的那个前面有 `>`�
   <Mark at="cell:1,1">VOLUME 主音量（焦点）</Mark>
   <Mark at="cell:1,2">KEY LED 按键灯</Mark>
   <Mark at="cell:1,3">SCREEN 屏幕</Mark>
-  <Mark at="8,43,200,58">设备 · 音频后端 · SD 卡 · 内存 · 构建日期</Mark>
+  <Mark at="cell:1,4">LOG 日志</Mark>
+  <Mark at="8,71,224,44">版本 · SD 卡 · 内存 · 构建</Mark>
   <KeyMark keys="G1">焦点：全亮</KeyMark>
-  <KeyMark keys="G2 G3">设置：半亮</KeyMark>
-  <Caption>SETUP SYSTEM：三项设备设置和一份设备状态。</Caption>
+  <KeyMark keys="G2 G3 G4">设置：半亮</KeyMark>
+  <Caption>SETUP SYSTEM：四项设备设置和一份设备状态。</Caption>
 </Shot>
 
 | 设置 | 范围 |  |
 |---|---|---|
-| VOLUME | 0–100（默认 50），一步 2 | 输出音量；和 [MIX：混音](./tape.mdx#tape-mix) 的 MASTER 是同一个，任何画面也能用 <Key k="FN" /> + <Key k="7" /> / <Key k="U" /> 调（[快捷调节：BPM、音量、八度](./fn.mdx#fn-quick)） |
+| VOLUME | 0–100（默认 70），一步 2 | 输出音量，按听感分布：0 静音，1 约 −59 dB，50 约 −21 dB，70 约 −10 dB，100 最大；小音量一端步子大，大音量一端细。和 [MIX：混音](./tape.mdx#tape-mix) 的 MASTER 是同一个，任何画面也能用 <Key k="FN" /> + <Key k="7" /> / <Key k="U" /> 调（[快捷调节：BPM、音量、八度](./fn.mdx#fn-quick)） |
 | KEY LED | 0–15（默认 15） | 所有按键灯的总亮度；选中它时演奏区显示亮度梯（[亮度设置与灯光测试](./lights.mdx#lights-ramp)） |
-| SCREEN | 4–100 %（默认 70 %） | 屏幕亮度 |
+| SCREEN | 3–100 %（默认 70 %） | 屏幕亮度 |
+| LOG | ON / OFF（默认 ON） | 把设备的日志写到 SD 卡上，出问题时用（[日志](./projects.mdx#storage-log)） |
 
-这些是设备设置：鸣片上所有应用共用，存在 `System/settings.cfg`，不会进任何工程。
+这些是设备设置：鸣片上所有应用共用，存在 SD 卡的 `CardenzaSynth/Settings/system.cfg`，不会进任何工程。
 
-下面的状态每次进来逐行打出：设备、音频后端、SD 卡（READY 或 NOT FOUND，见 [没插卡或卡坏了](./projects.mdx#storage-card)）、剩余内存、固件构建日期。
+下面的状态每次进来逐行打出：固件版本 VERSION、SD CARD（READY 或 NOT FOUND，见 [没插卡或卡坏了](./projects.mdx#storage-card)）、剩余内存 MEMORY（设备上是内部内存、它的最低点和 PSRAM）、BUILD（固件的提交号和构建时间）。
 
-<Keywords k="系统, 主音量, 音量, 按键灯亮度, 屏幕亮度, 亮度, sd 卡, 设备信息, 构建, system, volume, key led, screen brightness, brightness" />
+<Keywords k="系统, 主音量, 音量, 按键灯亮度, 屏幕亮度, 亮度, 日志, sd 卡, 设备信息, 版本, 固件版本, 构建, system, volume, key led, screen brightness, brightness, log, version" />
 
 ## 全部设置 {#setup-ref}
 

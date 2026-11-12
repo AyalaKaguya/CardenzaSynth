@@ -192,6 +192,12 @@ struct ChordSettings {
   bool operator==(const ChordSettings& other) const { return chord == other.chord && voicing == other.voicing; }
 };
 bool InScale(const KeyboardSettings& settings, int note);
+// The note a melodic key's chord is built on: under LOCK SNAP a key outside the scale moves down to it.
+int SnapToScale(const KeyboardSettings& settings, int note);
+// One key of the keyboard up (direction 1) or down (-1) from `note`: the next semitone, or the next
+// note of the scale where the pads play only the scale (SCALE layout, or a scale lock). Below 0 or
+// above 127 past the ends.
+int NextKeyboardNote(const KeyboardSettings& settings, int note, int direction);
 // The notes one pad press plays: the scale lock, then the track's chord and its voicing. Drums
 // always play the single drum. Returns the count (0 = the key is muted by the scale lock).
 std::size_t PadNotes(const KeyboardSettings& settings, const ChordSettings& chord, synth::SynthEngineKind kind, int note,

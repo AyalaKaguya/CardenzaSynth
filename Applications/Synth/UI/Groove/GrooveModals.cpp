@@ -473,6 +473,10 @@ void Controller::CommitText()
       CloseModal();
       SaveProjectNamed(text, text == state_.projectName);
       return;
+    case TextPurpose::ProjectRename:
+      CloseModal();
+      RenameProjectNamed(payload, text);
+      return;
     case TextPurpose::PresetSaveAs:
     {
       CloseModal();

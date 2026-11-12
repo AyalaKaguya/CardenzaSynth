@@ -179,11 +179,20 @@ table.cz-lists th { width: 140px; }
 }
 
 /* Scene map */
-.cz-scene-map { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin: 18px 0; }
+/* Four columns (the four scenes, like the ESC map), two when narrow, one on the narrowest: never three,
+   which put TAPE alone under SETUP. The maps of the left keys follow as one row across them, in the same
+   columns. The box is the container, so the columns follow the map's own width, not the window's. */
+.cz-scene-map-box { container-type: inline-size; margin: 18px 0; }
+.cz-scene-map { --cols: repeat(4, minmax(0, 1fr)); display: grid; grid-template-columns: var(--cols); gap: 14px; }
+@container (max-width: 680px) { .cz-scene-map { --cols: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 300px) { .cz-scene-map { --cols: minmax(0, 1fr); } }
 .cz-scene-map .scene-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cz-scene-map .scene-row { grid-column: 1 / -1; display: grid; grid-template-columns: var(--cols); gap: 8px 14px; margin-top: 10px; }
+.cz-scene-map .scene-row > .scene-title { grid-column: 1 / -1; }
 .cz-scene-map .scene-title { font: 700 14px var(--cz-mono); padding: 4px 0; border-bottom: 2px dotted var(--ifm-color-emphasis-300); }
 .cz-scene-map .scene-card { display: flex; flex-direction: column; gap: 4px; font: 12px var(--cz-mono); color: var(--ifm-color-emphasis-700); }
-.cz-scene-map .scene-card img { border-radius: 4px; background: #000; image-rendering: pixelated; border: 1px solid var(--ifm-color-emphasis-300); }
+/* The column sets the width, the screenshot its height (480 x 270 attributes: its own 16:9, also before it loads). */
+.cz-scene-map .scene-card img { display: block; width: 100%; height: auto; border-radius: 4px; background: #000; image-rendering: pixelated; border: 1px solid var(--ifm-color-emphasis-300); }
 .cz-scene-map .scene-card:hover img { border-color: var(--cz-fn); border-style: dashed; }
 
 @media (max-width: 640px) {

@@ -95,6 +95,7 @@ public:
   bool FxBusAvailable(std::size_t bus) const override;
   std::vector<std::string> ListProjects() const override;
   groove::SaveResult SaveProject(const std::string& name, bool overwrite, const groove::ProjectUiSettings& settings, std::string& message) override;
+  groove::SaveResult RenameProject(const std::string& from, const std::string& to, std::string& message) override;
   bool LoadProject(const std::string& name, groove::ProjectUiSettings& settings, std::string& message) override;
   bool NewProject(groove::ProjectUiSettings& settings, std::string& message) override;
   void SetLedBrightness(std::uint8_t level) override;
@@ -103,6 +104,8 @@ public:
   std::uint8_t Backlight() const override;
   void SetLogging(bool on) override;
   bool Logging() const override;
+  void SetScreenTheme(os::storage::Theme theme) override;
+  os::storage::Theme ScreenTheme() const override;
   groove::SystemInfo QuerySystem() const override;
 
   static constexpr std::array<synth::SynthEngineKind, synth::kSynthTrackCount> kDefaultKinds{{
@@ -123,7 +126,7 @@ private:
   bool EnterGuide(std::string& reason);
   void ExitGuide();
   void GuideSetup(const char* fields, std::size_t length);
-  bool FreshGuideProject();
+  bool FreshGuideProject(bool newKeyboard = false);
   void FillGuideSong(int stage);
   void SendGuide(const std::string& text);
   void SendGuideState(std::uint32_t now, bool always);
@@ -191,6 +194,7 @@ private:
   std::uint32_t guideLedsAt_ = 0;
   std::array<char, 2 + groove::kKeyCount> guideLeds_{};  // the last GD sent
   groove::Scene guideScene_ = groove::Scene::Instrument;  // where the user was, to go back there
+  groove::KeyboardSettings guideKeyboard_{};  // the user's keyboard: the practice projects play with it
   std::uint8_t guidePage_ = 0;
   // Changes the autosave does not have yet, and when the first of them came.
   bool sessionChanged_ = false;

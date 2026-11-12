@@ -1521,15 +1521,15 @@ UiBarSnapshot SynthUiModel::BuildModifierBarSnapshot(UiModifier highlightedModif
 UiBarSnapshot SynthUiModel::BuildSequencerEditBarSnapshot() const
 {
   UiBarSnapshot items{};
-  items[0].label = sequencer_.scopeLabel == "ALL" || sequencer_.scopeLabel.empty() ? "NOTE" : sequencer_.scopeLabel;
+  items[0].label = "NOTE";
   items[1].label = "LEN";
   items[2].label = "VEL";
   items[3].label = "TIME";
-  items[0].fullName = "Note Scope";
+  items[0].fullName = "Notes";
   items[1].fullName = "Length";
   items[2].fullName = "Velocity";
   items[3].fullName = "Timing Offset";
-  items[0].description = "Cycle all notes or individual chord notes";
+  items[0].description = "Edit selected step notes";
   items[1].description = "Edit selected step note length";
   items[2].description = "Edit selected step velocity";
   items[3].description = "Move notes within the step";

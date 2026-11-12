@@ -48,13 +48,13 @@ The lights have only four meanings: <Led state="off">off</Led> <Led state="half"
 
 ## Where is my work kept? Can I just pull the power? {#faq-save}
 
-Yes. The working state (patterns, sounds, mix, song, keyboard, chords and ARPs, tempo) is saved by itself in the device's own memory, card or no card, and comes back when you switch on. It is written once you stop pressing keys for a moment and nothing plays; while something keeps playing, at least once a minute. Not kept: capture takes and whether it was playing.
+Yes, with an SD card in. The working state (patterns, sounds, mix, song, keyboard, chords and ARPs, tempo) is saved by itself on the card and comes back when you switch on. It is written once the keys rest for a moment (1.5 s), playing or not; while keys keep coming, at least once a minute. Not kept: capture takes and whether it was playing.
 
-To keep a version as a file, save it: <Key k="FN+S" /> (a new project is named SONG 01, SONG 02 …), or SAVE AS in the FN menu of <Scene name="SETUP" /> <Page name="PROJECT" /> for a name of your own (see [Save, save as, new, open](./projects.mdx#project-save)). Projects go to `Cardenza/Apps/Cardenza/Synth/Projects` on the SD card. Settings save themselves.
+To keep a version as a file, save it: <Key k="FN+S" /> (a new project is named SONG 01, SONG 02 …), or SAVE AS in the FN menu of <Scene name="SETUP" /> <Page name="PROJECT" /> for a name of your own (see [Save, save as, new, open](./projects.mdx#project-save)). Projects go to `CardenzaSynth/Projects` on the SD card. Settings save themselves.
 
 :::warning
 
-A very long project (about 2000 notes) does not fit: the patterns that are not playing stay out, and the screen says TOO LONG TO AUTOSAVE: FN+S TO CARD. Save it to the card. A sample recording without a card lives only in memory and is lost with the power.
+Without an SD card nothing is kept: the Cardenza says NO SD CARD, NOTHING WILL BE SAVED after it starts, and everything is gone when the power goes. A card put in later is only used after a restart (see [No card, or a bad card](./projects.mdx#storage-card)).
 
 :::
 
@@ -76,11 +76,12 @@ The safest way: save a good version as another project (SAVE AS in the FN menu o
 
 Yes, with one USB cable the device is a MIDI device and a sound card for the computer:
 
-- **MIDI in**: a keyboard or DAW on the computer plays the tracks: channels 1–4 are tracks 1–4, any other channel plays the current track. Controllers (CC) go to that track's engine.
+- On the computer the device is called **203 Systems Cardenza**; no driver is needed.
+- **MIDI in**: a keyboard or DAW on the computer plays the tracks: channels 1–4 are tracks 1–4, any other channel plays the current track. Controllers (CC) go to that track's engine; CC 120 / 123 (all sound off / all notes off) end the notes the computer started, and so does unplugging.
 - **MIDI out**: what the device plays (keys and sequencer) goes to the computer, track n on channel n, so you can record it.
-- **Audio**: the computer records the device's sound (before the device's volume), and what the computer plays comes out of the device.
+- **Audio**: the computer records the device's sound (before the device's volume, the same on both channels). For now it is the computer's microphone only: what the computer plays is not heard on the device.
 
-There is no MIDI clock sync yet and no MIDI socket. In the web manual the same cable can also mirror the real keys (see [Connect your Cardenza (USB)](./web.mdx#web-usb)).
+There is no MIDI clock sync yet and no MIDI socket. The same cable lets the [guide](/) follow you on the device (see [Connect your Cardenza (USB)](./web.mdx#web-usb)).
 
 <Keywords k="midi, usb midi, usb audio, sound card, audio interface, computer, daw, external keyboard, sync, clock, 外接键盘, 电脑" />
 
@@ -89,7 +90,8 @@ There is no MIDI clock sync yet and no MIDI socket. In the web manual the same c
 A pattern has 1 to 256 steps; the GRID shows 16 at a time, the page number is at the bottom right (like `2/4`).
 
 - Length: STEPS on <Scene name="SEQ" /> <Page name="TRACK" />, or LEN − / LEN + in the FN menu of the SEQ pages (a whole page at a time).
-- Pages: <Key k="FN+ADD" /> / <Key k="FN+SUB" /> on the note page, or PAGE − / PAGE + in the FN menu. While playing, the GRID follows the playhead.
+- Pages: <Key k="ADD" /> / <Key k="SUB" /> on the note page with no step selected, or PAGE − / PAGE + in the FN menu. While playing, the GRID follows the playhead.
+- Patterns: <Key k="FN+ADD" /> / <Key k="FN+SUB" /> on the note page go to the next / previous pattern.
 
 Every pattern keeps its own length (see [TRACK page](./seq.mdx#seq-track)).
 
@@ -103,7 +105,7 @@ Open the preset list (<Key k="OK" /> on <Scene name="INSTR" /> <Page name="VOICE
 
 ## How do I switch to another app? {#faq-apps}
 
-The groovebox is one app on the device. Switch apps with the device's own launcher; the working state is kept when you leave and restored when you come back.
+The groovebox is one app on the device. Switch apps with the device's own launcher; with an SD card in, the working state is written to it when you leave and restored when you come back.
 
 <Keywords k="app, launcher, switch app, other firmware, 应用, 启动器" />
 

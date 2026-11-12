@@ -107,6 +107,7 @@ enum class TextPurpose : std::uint8_t {
   ProjectSaveAs,
   PresetSaveAs,
   SampleRename,
+  ProjectRename,  // payload: the project's name on the card
   Search,  // the filter of the preset / sample browser underneath (FN + F)
 };
 
@@ -270,6 +271,9 @@ struct RepeatState {
   // FN + a quick key (FnQuickControls): the setting it changes and the key held (kKeyCount = none).
   const char* quickId = nullptr;
   std::size_t quickKey = kKeyCount;
+  // The press edited a held pad's notes (Controller::AdjustHeldPadNotes): the repeat edits them too,
+  // and once the pad lets go it does nothing (never the whole steps' edit or the page flip).
+  bool padMove = false;
 };
 
 // FN is the menu of the current screen. Hold FN (or tap it to keep the menu open) and the GRID shows
@@ -303,7 +307,6 @@ enum class MenuAction : std::uint8_t {
   LengthDown,   // the length of the current pattern
   LengthUp,
   RecordPanel,  // the RECORD panel (also a held OK)
-  Scope,        // the note a chord step edits (also FN + ENTER)
   // TAPE
   LaunchRow,
   Capture,   // the playing patterns become a new SONG row (also FN + ENTER on SESSION)
@@ -314,6 +317,7 @@ enum class MenuAction : std::uint8_t {
   NewProject,
   LoadProject,
   SaveProjectAs,
+  RenameProject,  // PROJECT: the open project; FILES: the one under the cursor
 };
 
 struct MenuItem {
@@ -371,6 +375,23 @@ struct StepKey {
   bool wasOnly = false;      // the only step selected before this press: a tap lets it go
   std::size_t step = 0;      // from the start of the pattern
   std::uint32_t at = 0;
+};
+
+// A pad pressed on the note page while steps are selected edits them, its notes (its chord) as one.
+// A pad none of whose notes a selected step holds puts them in at once. A lit pad (a selected step
+// holds any of them) waits: let go untouched, it takes them out (the toggle of
+// SynthSequencer::ToggleNotesOnSelectedSteps). Held, it turns ADD / SUB to its notes alone on the
+// current edit lane (Controller::AdjustHeldPadNotes): NOTE moves them (a drum to another drum of the
+// kit), and keeps moving the same notes while it stays down, wherever they went; LEN / VEL / TIME
+// change their values only.
+struct PadEdit {
+  bool active = false;
+  bool removeOnRelease = false;  // lit when pressed: a tap takes its notes out at the release
+  bool used = false;             // another key came while it was down (ADD / SUB, a step ...): no tap
+  std::uint8_t root = 0;         // the key its notes are built on, where the moves took it
+  std::uint8_t velocity = 0;     // what the release's toggle puts in (0: the track's new-note velocity)
+  std::array<std::uint8_t, kMaxPadNotes> notes{};  // where its notes are now
+  std::uint8_t count = 0;
 };
 
 // Stopped, a step sounds while its key is down: its notes, until that key lets go.
@@ -444,6 +465,7 @@ struct UiState {
   std::array<std::uint8_t, kRows * kPadColumns> padChordCount{};
   std::array<std::uint8_t, kRows * kPadColumns> padTrack{};
   std::array<bool, kRows * kPadColumns> padArp{};  // the pad feeds the arpeggiator
+  std::array<PadEdit, kRows * kPadColumns> padEdit{};  // SEQ note page: what a held pad does to the selected steps
   // SETUP settings pages (KEYS, SYSTEM): the focused setting of each.
   std::array<std::uint8_t, kSettingsPageCount> settingsFocus{};
   RecordState record;
@@ -558,8 +580,14 @@ public:
     guideHintWaits_ = waiting;
   }
   std::uint64_t GuideHint() const { return guideHint_; }
+  bool GuideHintWaits() const { return guideHintWaits_; }
   // Where a lesson starts: the track, then the scene and its page (from 0; -1 keeps the scene's page).
   void GuideGoTo(Scene scene, int page, std::size_t track);
+  // The pages and focus (see GrooveGuide.cpp): the user's kept while the guide runs and put back after
+  // it; a lesson's practice project gets those of a new start.
+  void GuideKeepView() { CopyView(guideView_, state_); }
+  void GuideRestoreView() { CopyView(state_, guideView_); }
+  void GuideFreshView() { CopyView(state_, UiState{}); }
   // What the lesson page checks, letter and number pairs with the page tab last:
   // "s1p0t0e0y0m0o0h0q1w0k0z0c0a0g0l0x0v123nVOICE" (GrooveGuide.cpp says what each one is).
   std::string GuideState() const;
@@ -746,7 +774,8 @@ private:
   void OpenMenu();
   void RunMenu(std::size_t index);
   void RunMenuAction(const MenuItem& item);
-  void SoundPad(std::size_t index, bool on);
+  // `capture` false: a moved note's preview, which Capture leaves out.
+  void SoundPad(std::size_t index, bool on, bool capture = true);
   void StepPreset(int delta);
   // Edits to the track's sound are lost by loading a preset or switching the engine: with edits this
   // asks first (ENTER loads, ESC keeps them) and returns true; the confirm sits over the browser or
@@ -754,7 +783,14 @@ private:
   bool ConfirmLosingEdits(ConfirmPurpose purpose, const std::string& title, const std::string& payload);
   void ApplyPreset(const std::string& presetId);
   void ApplyEngine(synth::SynthEngineKind kind);
-  bool PadForSequence(const std::uint8_t* notes, std::size_t count, bool pressed, std::uint8_t velocity = 0);
+  bool PadForSequence(std::size_t pad, int key, const std::uint8_t* notes, std::size_t count, std::uint8_t velocity = 0);
+  // ADD / SUB with pads held on the note page: the current edit lane for their notes only, on the
+  // selected steps (PadEdit; NOTE moves them, MovePadNotes). True when a pad took the keys, which then
+  // do nothing else.
+  bool AdjustHeldPadNotes(int delta, bool coarse);
+  void MovePadNotes(const std::size_t* pads, std::size_t count, int delta, bool coarse);
+  bool PadEditHeld() const;
+  void UsePadEdits();
   // Recording (GrooveRecord.cpp).
   void CaptureNoteOn(std::size_t track, std::uint8_t note, std::uint8_t velocity);
   void CaptureNoteOff(std::size_t track, std::uint8_t note);
@@ -793,6 +829,8 @@ private:
   bool guide_ = false;
   std::uint64_t guideHint_ = 0;
   bool guideHintWaits_ = true;
+  UiState guideView_;  // the user's pages and focus while the guide runs
+  static void CopyView(UiState& to, const UiState& from);
   void ComputeSceneLeds(LedFrame& frame) const;
   void FillPresetRows(Modal& modal) const;
   void SetCellParameter(std::size_t index, int value);
@@ -816,6 +854,8 @@ private:
   // Project actions
   void SaveProject(bool saveAs);
   void SaveProjectNamed(const std::string& name, bool overwrite);
+  void RenameProject();
+  void RenameProjectNamed(const std::string& from, const std::string& to);
   void LoadProjectNamed(const std::string& name);
   void NewProject();
   void RefreshProjects();

@@ -78,18 +78,11 @@ TAPE's FX page, part of the project (saved since project format v4):
 
 ## Memory and CPU {#fx-cpu}
 
-The board has no PSRAM; effect buffers are allocated the first time they are used:
-
-| Part | Memory |
-|---|---|
-| Effect core | about 4.6 KB |
-| Each track with effects / each chorus | 1 KB / 1 KB |
-| Delay | 16 KB (32 KB for echoes longer than 743 ms) |
-| Reverb | about 8.8 KB |
-| Everything on | about 35 KB |
+Effect buffers are taken the first time an effect is used and given back when it is not: the delay line 16 KB (32 KB for echoes longer than 743 ms) and the reverb about 8.8 KB, both in the device's 2 MB PSRAM, and 1 KB per track for its chorus.
 
 - If the delay or reverb cannot get memory, that bus is silent and the FX page and the signal chain show NO MEM. With every effect off, the output is bit-identical to having no effects.
-- Audio has a budget of 5.8 ms per 256 frames. Many DX7 notes with effects come close to it. When it runs out, a voice is dropped (released notes first, the oldest next, drums last); the beat never stops.
+- Each track plays a few notes at once: DX7 4, JUNO and DRUMS 6, SAMPLER 4. When all are busy, a new note takes the voice of an older one, a released one first.
+- Audio has a budget of 5.8 ms per 256 frames, shared by both of the chip's cores. When a block would not fit, the device fades out the notes that matter least: always on the track with the most notes sounding, its released tails first, then its quietest held note. A track only ever gives way to itself, and the beat never slows or stops.
 
 :::warning
 

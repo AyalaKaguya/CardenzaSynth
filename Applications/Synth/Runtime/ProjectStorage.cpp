@@ -36,10 +36,14 @@ constexpr std::size_t kMaxProjectBytes = 4 * 1024 * 1024;
 // one PLAYFX line per track (chord, voicing, arp mode, rate, octaves, gate, latch); the UI line's
 // octave, root, scale and layout are the project's keyboard.
 // Version 7 gives every pattern its own length, up to 256 steps: the T line ends with the length of
-// each pattern instead of the one length of the track. The next format change takes 8.
-constexpr int kProjectVersion = 7;
-constexpr int kMaxReadProjectVersion = 7;
+// each pattern instead of the one length of the track.
+// Version 8 adds HITS (a note fired 1..4 times in its step): the T line gains the track's new-note
+// hits after its new-note length, and every note line a seventh number, the note's hits. It is read
+// already and written once kProjectWriteVersion becomes 8 (ProjectStorage.h); older files read as one
+// hit per note. The next format change after it takes 9.
 constexpr int kMinProjectVersion = 1;
+static_assert(kProjectWriteVersion == 7 || kProjectWriteVersion == 8, "This writer knows formats 7 and 8.");
+static_assert(kProjectReadVersion == 8, "This reader knows formats 1 to 8.");
 constexpr unsigned kMaxMixerLevel = 100;
 
 std::string ProjectPath(const std::string& name) {
@@ -155,8 +159,10 @@ std::vector<std::string> ListProjects() {
 
 namespace {
 
-void WriteProjectText(std::ostream& file, const ProjectData& project) {
-  file << "CARDENZA_PROJECT " << kProjectVersion << "\nBUILD CardenzaSynth 1\nUI " << project.activeTrack << ' ' << project.octave << ' '
+void WriteProjectText(std::ostream& file, const ProjectData& project, int version) {
+  // Format 8's HITS; format 7 has none (the notes are written as plain ones).
+  const bool hits = version >= 8;
+  file << "CARDENZA_PROJECT " << version << "\nBUILD CardenzaSynth 1\nUI " << project.activeTrack << ' ' << project.octave << ' '
        << project.root << ' ' << project.scale << ' ' << project.layout << ' ' << project.ledBrightness << '\n';
   file << "MASTER " << static_cast<int>(project.mixer.master) << '\n';
   for (std::size_t track = 0; track < kSynthTrackCount; ++track)
@@ -183,7 +189,9 @@ void WriteProjectText(std::ostream& file, const ProjectData& project) {
   file << "SEQ " << project.sequence->bpm << ' ' << static_cast<int>(project.sequence->swing) << '\n';
   for (const auto& track : project.sequence->tracks) {
     file << "T " << track.patternCount << ' ' << track.activePattern << ' ' << static_cast<int>(track.defaultVelocity) << ' '
-         << track.defaultLengthPulses << ' ' << track.enabled << ' ' << track.muted;
+         << track.defaultLengthPulses;
+    if (hits) file << ' ' << static_cast<int>(track.defaultHits);
+    file << ' ' << track.enabled << ' ' << track.muted;
     for (std::size_t p = 0; p < track.patternCount; ++p) file << ' ' << track.patternSteps[p];
     file << '\n';
     std::size_t count = 0;
@@ -196,8 +204,12 @@ void WriteProjectText(std::ostream& file, const ProjectData& project) {
     for (std::size_t p = 0; p < track.patternCount; ++p)
       for (std::size_t s = track.patterns[p].steps.NextInUse(0); s < kSequencerMaxSteps; s = track.patterns[p].steps.NextInUse(s + 1))
         for (const auto& note : track.patterns[p].steps[s].notes)
-          if (note.active) file << p << ' ' << s << ' ' << static_cast<int>(note.note) << ' ' << static_cast<int>(note.velocity)
-                               << ' ' << note.lengthPulses << ' ' << static_cast<int>(note.microstep) << '\n';
+          if (note.active) {
+            file << p << ' ' << s << ' ' << static_cast<int>(note.note) << ' ' << static_cast<int>(note.velocity) << ' ' << note.lengthPulses
+                 << ' ' << static_cast<int>(note.microstep);
+            if (hits) file << ' ' << static_cast<int>(note.Hits());
+            file << '\n';
+          }
   }
   // The song mode switch is a performance control and is not stored.
   file << "SONG " << project.sequence->songLength << ' ' << project.sequence->songLoop << '\n';
@@ -239,14 +251,14 @@ private:
   std::uint32_t hash_ = 2166136261u;
 };
 
-ProjectResult WriteProject(const std::string& path, const ProjectData& project) {
+ProjectResult WriteProject(const std::string& path, const ProjectData& project, int version = kProjectWriteVersion) {
   const bool existing = Exists(path);
   const std::string temporary = path + ".tmp";
   const std::string backup = path + ".bak";
   // Binary: the same bytes on every host (a Windows text stream wrote CRLF).
   std::ofstream file(temporary, std::ios::trunc | std::ios::binary);
   if (!file) return ProjectResult::StorageError;
-  WriteProjectText(file, project);
+  WriteProjectText(file, project, version);
   file.flush();
   const bool written = file.good();
   file.close();
@@ -277,7 +289,7 @@ ProjectResult ReadProject(const std::string& path, ProjectData& destination) {
   if (!project.sequence) return ProjectResult::NoMemory;
   int version = 0;
   int build = 0;
-  if (!ReadExpected(file, "CARDENZA_PROJECT") || !(file >> version) || version < kMinProjectVersion || version > kMaxReadProjectVersion ||
+  if (!ReadExpected(file, "CARDENZA_PROJECT") || !(file >> version) || version < kMinProjectVersion || version > kProjectReadVersion ||
       !ReadExpected(file, "BUILD") || !ReadExpected(file, "CardenzaSynth") || !(file >> build) || build != 1 || !ReadExpected(file, "UI") ||
       !(file >> project.activeTrack >> project.octave >> project.root >> project.scale >> project.layout >> project.ledBrightness)) return ProjectResult::Invalid;
   if (version >= 2) {
@@ -358,11 +370,13 @@ ProjectResult ReadProject(const std::string& path, ProjectData& destination) {
   project.sequence->bpm = static_cast<std::uint16_t>(bpm);
   project.sequence->swing = static_cast<std::uint8_t>(swing);
   for (auto& track : project.sequence->tracks) {
-    unsigned velocity = 0, length = 0, enabled = 0, muted = 0;
+    unsigned velocity = 0, length = 0, enabled = 0, muted = 0, hits = 1;
     std::size_t noteCount = 0;
-    if (!ReadExpected(file, "T") || !(file >> track.patternCount >> track.activePattern >> velocity >> length >> enabled >> muted) ||
+    if (!ReadExpected(file, "T") || !(file >> track.patternCount >> track.activePattern >> velocity >> length) ||
+        (version >= 8 && !(file >> hits)) || !(file >> enabled >> muted) ||
         track.patternCount < 1 || track.patternCount > kSequencerMaxPatternCount || track.activePattern >= track.patternCount ||
-        velocity < 1 || velocity > 127 || length < 1 || length > kSequencerMaxSteps * kSequencerPulsesPerStep || enabled > 1 || muted > 1) return ProjectResult::Invalid;
+        velocity < 1 || velocity > 127 || length < 1 || length > kSequencerMaxSteps * kSequencerPulsesPerStep || hits < 1 ||
+        hits > kSequencerMaxHits || enabled > 1 || muted > 1) return ProjectResult::Invalid;
     // Before version 7 all the patterns of a track shared one length.
     if (version >= 7) {
       for (std::size_t p = 0; p < track.patternCount; ++p)
@@ -375,20 +389,24 @@ ProjectResult ReadProject(const std::string& path, ProjectData& destination) {
     if (!ReadExpected(file, "NOTES") || !(file >> noteCount) || noteCount > track.patternCount * kSequencerMaxSteps * 8) return ProjectResult::Invalid;
     track.defaultVelocity = static_cast<std::uint8_t>(velocity);
     track.defaultLengthPulses = static_cast<std::uint16_t>(length);
+    track.defaultHits = static_cast<std::uint8_t>(hits);
     track.enabled = enabled != 0;
     track.muted = muted != 0;
     for (std::size_t n = 0; n < noteCount; ++n) {
       std::size_t p = 0, s = 0;
       unsigned pitch = 0, microstep = 0;
-      if (!(file >> p >> s >> pitch >> velocity >> length >> microstep) || p >= track.patternCount || s >= kSequencerMaxSteps ||
-          pitch > 127 || velocity < 1 || velocity > 127 || length < 1 || length > kSequencerMaxSteps * kSequencerPulsesPerStep || microstep >= kSequencerMicrostepCount) return ProjectResult::Invalid;
+      hits = 1;  // before version 8 every note is a single hit
+      if (!(file >> p >> s >> pitch >> velocity >> length >> microstep) || (version >= 8 && !(file >> hits)) || p >= track.patternCount ||
+          s >= kSequencerMaxSteps || pitch > 127 || velocity < 1 || velocity > 127 || length < 1 || length > kSequencerMaxSteps * kSequencerPulsesPerStep ||
+          microstep >= kSequencerMicrostepCount || hits < 1 || hits > kSequencerMaxHits) return ProjectResult::Invalid;
       if (!track.patterns.Ensure(p)) return ProjectResult::NoMemory;
       auto* step = track.patterns[p].steps.TryEdit(s);
       if (step == nullptr) return ProjectResult::NoMemory;
       auto& notes = step->notes;
       auto slot = std::find_if(notes.begin(), notes.end(), [](const auto& note) { return !note.active; });
       if (slot == notes.end()) return ProjectResult::Invalid;
-      *slot = {static_cast<std::uint8_t>(pitch), static_cast<std::uint8_t>(velocity), static_cast<std::uint16_t>(length), static_cast<std::uint8_t>(microstep), true};
+      *slot = {static_cast<std::uint8_t>(pitch), static_cast<std::uint8_t>(velocity), static_cast<std::uint16_t>(length), static_cast<std::uint8_t>(microstep), true,
+               static_cast<std::uint8_t>(hits)};
     }
   }
   // Versions 1 and 2 load with an empty, looping song (the ProjectState defaults).
@@ -433,6 +451,35 @@ ProjectResult LoadProjectFile(const std::string& name, ProjectData& destination)
   return ReadProject(ProjectPath(name), destination);
 }
 
+ProjectResult RenameProjectFile(const std::string& from, const std::string& to) {
+  if (!IsProjectNameValid(from) || !IsProjectNameValid(to)) return ProjectResult::Invalid;
+  if (from == to) return ProjectResult::Ok;
+  if (!storage::EnsureLayout()) return ProjectResult::StorageError;
+  const std::string source = ProjectPath(from);
+  const std::string target = ProjectPath(to);
+  const bool file = Exists(source);
+  const bool backup = Exists(source + ".bak");
+  if (!file && !backup) return ProjectResult::Invalid;
+  // FAT (and Windows) ignore case: there, a name that differs only in case is the same file, so it
+  // goes through a step name, and it is not a name taken by another project.
+  const bool caseOnly = std::equal(from.begin(), from.end(), to.begin(), to.end(), [](unsigned char a, unsigned char b) {
+    return std::toupper(a) == std::toupper(b);
+  });
+  if (!caseOnly && (Exists(target) || Exists(target + ".bak"))) return ProjectResult::Exists;
+  const auto move = [caseOnly](const std::string& a, const std::string& b) {
+    if (!caseOnly) return std::rename(a.c_str(), b.c_str()) == 0;
+    const std::string step = b + ".ren";
+    return std::rename(a.c_str(), step.c_str()) == 0 && std::rename(step.c_str(), b.c_str()) == 0;
+  };
+  if (file && !move(source, target)) return ProjectResult::StorageError;
+  if (backup && !move(source + ".bak", target + ".bak")) {
+    // Never half renamed: a backup left under the old name would list that name again.
+    if (file) move(target, source);
+    return ProjectResult::StorageError;
+  }
+  return ProjectResult::Ok;
+}
+
 ProjectResult SaveProjectFileAt(const std::string& path, const ProjectData& project) {
   if (path.empty() || !ValidMetadata(project)) return ProjectResult::Invalid;
   return WriteProject(path, project);
@@ -442,7 +489,7 @@ std::uint32_t ProjectFingerprint(const ProjectData& project) {
   if (!project.sequence) return 0;
   HashBuffer buffer;
   std::ostream text(&buffer);
-  WriteProjectText(text, project);
+  WriteProjectText(text, project, kProjectWriteVersion);
   return buffer.Hash() | 1u;  // never 0, which means none
 }
 
@@ -450,5 +497,12 @@ ProjectResult LoadProjectFileAt(const std::string& path, ProjectData& destinatio
   if (path.empty()) return ProjectResult::Invalid;
   return ReadProject(path, destination);
 }
+
+#if defined(CARDENZA_PROJECT_TEST_HOOKS)
+ProjectResult SaveProjectFileAtVersionForTest(const std::string& path, const ProjectData& project, int version) {
+  if (path.empty() || !ValidMetadata(project) || version < 7 || version > kProjectReadVersion) return ProjectResult::Invalid;
+  return WriteProject(path, project, version);
+}
+#endif
 
 }  // namespace synth

@@ -44,7 +44,22 @@ INSTR 管当前轨的声音：用哪个音源（引擎）、哪个音色、这�
   <Step keys="ADD" shot="instr-voice" at="8,40,200,26"><Key k="ADD" /> / <Key k="SUB" /> 在 VOICE 页直接换音色。</Step>
 </Strip>
 
-<Keywords k="换音色, 下一个音色, 音源, 引擎, 选择合成器, voice, preset, next sound, change sound, engine picker" />
+**改过的音色会先问一句。** 只要有一个参数和这个音色载入时不一样，载入音色（VOICE 上的 <Key k="ADD" /> / <Key k="SUB" />、浏览列表里的 <Key k="OK" />，重新载入同一个也算）或换音源之前都会先问，免得改动白白丢掉：
+
+<Shot name="preset-confirm">
+  <Mark at="8,43,172,11">会丢掉的改动（红字）</Mark>
+  <Mark at="10,70,104,26">OK：换</Mark>
+  <Mark at="125,70,104,26">ESC：保留改动</Mark>
+  <KeyMark keys="OK">闪烁：等你决定</KeyMark>
+  <KeyMark keys="ESC">保留</KeyMark>
+  <Caption>T2 改了 CUTOFF，再在 VOICE 上按 ADD：换掉改过的 LEAD I 之前先问 LOAD …?。</Caption>
+</Shot>
+
+- 标题是 `LOAD <音色>?` 或 `SWITCH TO <音源>?`，下面写着 `EDITS TO <音色> WILL BE LOST`。<Key k="OK" /> 换；<Key k="ESC" /> 保留现在的音色（从浏览列表或音源选择进来的，回到那里）。
+- 想留下改过的音色，先用 FN 菜单的 SAVE 或 SAVE AS 存起来。
+- 教程里不会问：练习工程本来就会丢掉。
+
+<Keywords k="换音色, 下一个音色, 音源, 引擎, 选择合成器, 改动会丢失, 改过的音色, voice, preset, next sound, change sound, engine picker, edits will be lost" />
 
 ## 音色浏览与保存 {#instr-presets}
 
@@ -57,7 +72,7 @@ INSTR 管当前轨的声音：用哪个音源（引擎）、哪个音色、这�
 - 列表里演奏区和 GRID 不打字，误按不会开始过滤：搜索总是 <Key k="FN+F" />。搜索框留空就显示全部。
 - <Key k="ESC" /> 先清空过滤，再按一次关闭。
 - <Key k="ADD" /> 往上、<Key k="SUB" /> 往下；<Key k="FN" /> + <Key k=";" /> <Key k="." /> 也可以。<Key k="FN+ADD" /> / <Key k="FN+SUB" /> 一次走 8 行。
-- **SAVE**（FN 菜单）：自己的音色直接覆盖；出厂音色存成一个新的自己的音色，名字自动加上下一个空着的编号（例如 `LEAD I 2`），不用起名。**SAVE AS** 会让你输入名字。自己的音色存在 SD 卡上本应用的 Presets 目录里（`Cardenza/Apps/Cardenza/Synth/Presets/<音源>/`）。
+- **SAVE**（FN 菜单）：自己的音色直接覆盖；出厂音色存成一个新的自己的音色，名字自动加上下一个空着的编号（例如 `LEAD I 2`），不用起名。**SAVE AS** 会让你输入名字。自己的音色存在 SD 卡上，每个音源一个音色库（`CardenzaSynth/Presets/<音源>/`）。
 
 <Keywords k="音色库, 预设, 浏览, 搜索音色, 查找, 过滤, 保存音色, 另存, preset, presets, browse, search, find, filter, fn f, save sound, patch library" />
 

@@ -57,7 +57,7 @@ KEYS 页的 SCALE 和 ROOT 选音阶和根音（C–B）。音阶决定 SCALE �
   <Mark at="cell:1,4">OCTAVE 八度</Mark>
   <Mark at="cell:2,1">VELO 力度</Mark>
   <Mark at="cell:2,2">LOCK 锁定</Mark>
-  <Mark at="cell:2,3">SELECT（ROLL：单选 / 多选）</Mark>
+  <Mark at="cell:2,3">SELECT（SEQ 选步：单选 / 多选）</Mark>
   <Mark at="cells:3,1-4,4">当前音阶在键盘上</Mark>
   <Caption>SETUP 的 KEYS 页。</Caption>
 </Shot>
@@ -104,13 +104,13 @@ PIANO 和 CHROMA 排列下，音阶外的键怎么办：
 <Strip>
   <Step keys="hold CTRL + G2" shot="instr-chord" at="cell:1,1">在 <Scene name="INSTR" /> 里按住 <Key k="CTRL" /> 按 G2：这条轨道的 CHORD 页。CHORD 是 OFF。</Step>
   <Step keys="G1" shot="chord-on" at="cell:1,1 9,43,170,20">点 CHORD：TRIAD。图上写着根音上的键会弹哪几个音（C3 PLAYS C3 E3 G3）。</Step>
-  <Step keys="hold r2c1~C" shot="chord-held" at="cells:3,1-4,4">按一个键：三个音一起响，组成音在屏幕和演奏区上都亮。</Step>
+  <Step keys="hold r3c1~C" shot="chord-held" at="cells:3,1-4,4">按一个键：三个音一起响，组成音在屏幕和演奏区上都亮。</Step>
 </Strip>
 
 - **CHORD**：OFF / TRIAD / 7TH / MAJ / MIN / SUS4 / MAJ7 / MIN7 / DOM7 / POWER / OCTAVE。TRIAD 和 7TH 在当前音阶里叠三度（音阶外的键借用大三和弦 / 属七），其余是固定和弦。
 - **VOICING**：ROOT 原位 / INV1 第一转位（最低音升八度）/ INV2 第二转位（最低的两个音升八度）/ SPREAD 展开（第二个音升八度）。
 - 第二行写着这个调里每一级的三和弦（字体只有大写：小三和弦写成 `D-`，减三和弦写成 `BDIM`）。
-- 和弦的每个音都像单独的音一样录进音序器，ARP 也会把它们一个个弹出来。
+- 实时录音时，和弦的每个音都像单独的音一样录进去，ARP 也会把它们一个个弹出来。在 SEQ 音符页上，一个键的和弦作为一组放进一步或从一步里去掉（见 [选中与编辑](./seq.mdx#seq-edit)）。
 
 <Shot name="chord-held">
   <Mark at="cell:1,1">CHORD 和弦</Mark>
@@ -118,7 +118,7 @@ PIANO 和 CHROMA 排列下，音阶外的键怎么办：
   <Mark at="9,43,140,10">根音上的键弹出的音</Mark>
   <Mark at="9,53,170,10">这个调的每一级</Mark>
   <Mark at="cells:3,1-4,4">组成音（蓝）</Mark>
-  <KeyMark keys="r2c1 r2c3 r2c5">和弦音：全亮</KeyMark>
+  <KeyMark keys="r3c1 r3c3 r3c5">和弦音：全亮</KeyMark>
   <Caption>按住 C：和弦 C E G 三个音全亮。</Caption>
 </Shot>
 
@@ -130,7 +130,7 @@ PIANO 和 CHROMA 排列下，音阶外的键怎么办：
 
 <Strip>
   <Step keys="hold CTRL + G3" shot="instr-arp" at="cell:1,1">在 <Scene name="INSTR" /> 里按住 <Key k="CTRL" /> 按 G3：这条轨道的 ARP 页。ARP OFF 时整幅图变暗。</Step>
-  <Step keys="G1, hold r2c1~C + r2c3~E + r2c5~G" shot="arp-running" at="cells:3,1-4,4">点 ARP：UP。按住 C E G：几个音从下往上轮流弹。</Step>
+  <Step keys="G1, hold r3c1~C + r3c3~E + r3c5~G" shot="arp-running" at="cells:3,1-4,4">点 ARP：UP。按住 C E G：几个音从下往上轮流弹。</Step>
 </Strip>
 
 <Shot name="arp-running">
@@ -140,7 +140,7 @@ PIANO 和 CHROMA 排列下，音阶外的键怎么办：
   <Mark at="cell:1,4">GATE</Mark>
   <Mark at="cell:2,1">HOLD 松手继续</Mark>
   <Mark at="cells:3,1-4,4">16 步的演奏顺序</Mark>
-  <KeyMark keys="r2c1 r2c3 r2c5">按住的键</KeyMark>
+  <KeyMark keys="r3c1 r3c3 r3c5">按住的键</KeyMark>
   <Caption>ARP UP：按住 C E G，三个音从下往上轮流弹。每根柱是一步，高低是音高，宽度是 GATE；白色的柱是正在发声的那一步。</Caption>
 </Shot>
 
@@ -162,7 +162,7 @@ PIANO 和 CHROMA 排列下，音阶外的键怎么办：
 
 ## 鼓 {#play-drums}
 
-鼓轨（默认 <Track n="1" />）的演奏区每一**列**是一个鼓，**行**决定轻重：最上面一行最重（力度 127），往下 100、70，最下面一行最轻（40）。打一下，这一列从下往上亮到弹的那一行。鼓不走 ARP，也不受音阶、和弦和 VELO 影响。每个鼓的音量在 INSTR 的 KIT 页（见 [DRUMS 鼓机](./instr.mdx#engine-drums)）。
+鼓轨（默认 <Track n="1" />）的演奏区每一**列**是一个鼓，**行**决定轻重：最上面一行最重（力度 127），往下 100、70，最下面一行最轻（40）。静止时演奏键半亮；按住时这一列从下往上亮到弹的那一行，一击沿着这一列扩散，越重走得越远。屏幕上用点阵疏密表示力度，分四档，一眼分得清。鼓不走 ARP，也不受音阶、和弦和 VELO 影响。每个鼓的音量在 INSTR 的 KIT 页（见 [DRUMS 鼓机](./instr.mdx#engine-drums)）。
 
 <Keymap>
   <Group keys="r0c1-r3c1">底鼓</Group>

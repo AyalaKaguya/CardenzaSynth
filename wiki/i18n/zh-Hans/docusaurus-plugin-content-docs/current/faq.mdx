@@ -48,13 +48,13 @@ sidebar_position: 15
 
 ## 我的东西存在哪？能直接拔电吗 {#faq-save}
 
-能。工作状态（Pattern、音色、混音、编排、键盘、和弦与 ARP、速度）会自己存在设备内部的存储里，插不插卡都一样，开机时回来。停下按键一会儿、没有在播放时就写入；一直在播放时，至少每分钟写一次。不保留的：无感录制的 take，以及是否在播放。
+能，只要插着 SD 卡。工作状态（Pattern、音色、混音、编排、键盘、和弦与 ARP、速度）会自己存到卡上，开机时回来。按键停下一会儿（1.5 秒）就写入，播放中也一样；一直在按键时，至少每分钟写一次。不保留的：无感录制的 take，以及是否在播放。
 
-想把一个版本存成文件就保存：<Key k="FN+S" />（新工程自动起名 SONG 01、SONG 02……），或者用 <Scene name="SETUP" /> <Page name="PROJECT" /> 的 FN 菜单里的 SAVE AS 自己起名（见 [保存、另存、新建、打开](./projects.mdx#project-save)）。工程存在 SD 卡的 `Cardenza/Apps/Cardenza/Synth/Projects`。设置会自动保存。
+想把一个版本存成文件就保存：<Key k="FN+S" />（新工程自动起名 SONG 01、SONG 02……），或者用 <Scene name="SETUP" /> <Page name="PROJECT" /> 的 FN 菜单里的 SAVE AS 自己起名（见 [保存、另存、新建、打开](./projects.mdx#project-save)）。工程存在 SD 卡的 `CardenzaSynth/Projects`。设置会自动保存。
 
 :::warning
 
-特别长的工程（大约 2000 个音）放不下：不在播放的 Pattern 不进自动保存，屏幕提示 TOO LONG TO AUTOSAVE: FN+S TO CARD，请存到卡上。没插卡时录的采样只在内存里，断电就没了。
+没有 SD 卡就什么都不保留：开机后鸣片提示 NO SD CARD、NOTHING WILL BE SAVED，断电后一切都没了。之后再插的卡要重新开机才会用（见 [没插卡或卡坏了](./projects.mdx#storage-card)）。
 
 :::
 
@@ -76,11 +76,12 @@ sidebar_position: 15
 
 能。一根 USB 线，设备对电脑来说就是 MIDI 设备和声卡：
 
-- **MIDI 输入**：电脑上的键盘或 DAW 弹各轨：通道 1–4 是轨道 1–4，其他通道弹当前轨。控制器（CC）交给那一轨的音源。
+- 设备在电脑上叫 **203 Systems Cardenza**，不用装驱动。
+- **MIDI 输入**：电脑上的键盘或 DAW 弹各轨：通道 1–4 是轨道 1–4，其他通道弹当前轨。控制器（CC）交给那一轨的音源；CC 120 / 123（全部静音 / 全部音符关）会结束电脑弹出的音，拔掉线也一样。
 - **MIDI 输出**：设备弹出的音（按键和音序器）发给电脑，轨道 n 走通道 n，可以录下来。
-- **音频**：电脑能录到设备的声音（在设备音量之前），电脑播放的声音从设备出来。
+- **音频**：电脑能录到设备的声音（在设备音量之前，两个声道一样）。目前它只当电脑的麦克风：电脑播放的声音不会从设备出来。
 
-还没有 MIDI 时钟同步，也没有 MIDI 插口。在网页说明书里，同一根线还能让真机的按键同步过来（见 [连接真机（USB）](./web.mdx#web-usb)）。
+还没有 MIDI 时钟同步，也没有 MIDI 插口。同一根线还能让 [教程](/) 在设备上带着你走（见 [连接真机（USB）](./web.mdx#web-usb)）。
 
 <Keywords k="midi, usb midi, usb 音频, 声卡, 电脑, daw, 外接键盘, 同步, usb audio, external keyboard, sync, clock" />
 
@@ -89,7 +90,8 @@ sidebar_position: 15
 一个 Pattern 有 1 到 256 步；GRID 一次显示 16 步，页码在右下角（如 `2/4`）。
 
 - 长度：<Scene name="SEQ" /> <Page name="TRACK" /> 的 STEPS，或 SEQ 各页 FN 菜单里的 LEN − / LEN +（一次一整页）。
-- 翻页：音符页上 <Key k="FN+ADD" /> / <Key k="FN+SUB" />，或 FN 菜单里的 PAGE − / PAGE +。播放时 GRID 跟着播放头走。
+- 翻页：音符页上没有选中的步时按 <Key k="ADD" /> / <Key k="SUB" />，或 FN 菜单里的 PAGE − / PAGE +。播放时 GRID 跟着播放头走。
+- 换 Pattern：音符页上 <Key k="FN+ADD" /> / <Key k="FN+SUB" /> 换到下一个 / 上一个 Pattern。
 
 每个 Pattern 记住自己的长度（见 [TRACK 页](./seq.mdx#seq-track)）。
 
@@ -103,7 +105,7 @@ sidebar_position: 15
 
 ## 怎么切到别的应用 {#faq-apps}
 
-Groovebox 是设备上的一个应用。切换应用用设备自带的启动器；切走前的工作状态会保留，回来时恢复。
+Groovebox 是设备上的一个应用。切换应用用设备自带的启动器；插着 SD 卡时，切走前工作状态会写到卡上，回来时恢复。
 
 <Keywords k="应用, 启动器, 切换应用, 其它固件, app, launcher, switch app" />
 

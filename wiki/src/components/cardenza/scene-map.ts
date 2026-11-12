@@ -19,7 +19,7 @@ export const SCENE_MAP: [string, string, [string, string, string][]][] = [
   ]],
   ["2 SEQ", "seq", [
     ["ROLL", "seq-roll", "seq-notes"],
-    ["STEP REC", "seq-step-rec", "seq-step"],
+    ["STEP", "seq-step-rec", "seq-step"],
     ["RECORD", "record-panel", "record"],
     ["PATTERN", "seq-patterns", "seq-pattern"],
     ["TRACK", "seq-track", "seq-track"],

@@ -34,7 +34,6 @@ std::string HeldStepLead(const SequencerUiState& sequence)
 std::string HeldStepDetail(const SequencerUiState& sequence)
 {
   if (sequence.editLane != SequencerEditLane::Note) return sequence.valueLabel;
-  if (sequence.scopedNote >= 0) return NoteName(sequence.scopedNote);
   return sequence.noteNames.empty() ? "EMPTY" : sequence.noteNames;
 }
 
@@ -72,7 +71,7 @@ void DrawHomeTitle(ui::Canvas& canvas, const UiScreenSnapshot& snapshot, bool gr
     {
       DrawTitleBar(canvas, sequence.heldStepCount > 1 ? std::to_string(sequence.heldStepCount) + " STEPS" : Index("STEP", sequence.primaryHeldStep),
                    HeldStepDetail(sequence), kAccent,
-                   sequence.scopeLabel == "ALL" ? "ALL NOTES" : "NOTE " + sequence.scopeLabel,
+                   "ALL NOTES",
                    sequence.selectionLatched ? "HOME:EXIT" : "HOLD", kDim, alpha);
       return;
     }
@@ -245,7 +244,7 @@ void DrawStepEditPage(ui::Canvas& canvas, const ui::Rect& body, const UiScreenSn
     const std::string notes = HeldStepDetail(sequence);
     const int scale = FitScale(canvas, notes, body.width, 2);
     DrawMarqueeTextInRect(canvas, MakeRect(body.x, body.y + 16, body.width, InkHeight(scale)), notes,
-                          FadeColor(sequence.noteNames.empty() && sequence.scopedNote < 0 ? kDim : kText, alpha), scale);
+                          FadeColor(sequence.noteNames.empty() ? kDim : kText, alpha), scale);
     return;
   }
   DrawInk(canvas, body.x, body.y + 12, TruncateText(canvas, sequence.valueLabel, body.width, 2), FadeColor(kText, alpha), 2);

@@ -22,7 +22,7 @@ Every key has a single-colour light that tells you what the key can do right now
   <KeyMark keys="G2 G4">Empty step: off</KeyMark>
   <KeyMark keys="G1 G3">Has notes: half lit</KeyMark>
   <KeyMark keys="G5">Selected: fully lit</KeyMark>
-  <KeyMark keys="r2c1">This step's note: fully lit</KeyMark>
+  <KeyMark keys="r3c1">This step's note: fully lit</KeyMark>
   <KeyMark keys="PADS">Can sound: half lit</KeyMark>
   <Caption>SEQ note page on step 5: off, half lit and fully lit in one picture.</Caption>
 </Shot>
@@ -32,10 +32,10 @@ Every key has a single-colour light that tells you what the key can do right now
 | <Led state="off">off</Led> | nothing there | an empty step, a key that cannot sound (a piano gap, a locked note outside the scale), a function this screen does not have, a send that is off |
 | <Led state="half">half lit</Led> | something there, not chosen | a step with notes, a key that sounds, an option, a parameter, an action you can run, an existing pattern |
 | <Led state="full">fully lit</Led> | chosen, or happening | the selected step, the focused parameter, the current page / scene / track / pattern, a held or sounding key, the playhead, a switch that is on (mute, solo, sequencer on) |
-| <Led state="blink">blinking</Led> | waiting | a queued pattern, a cued song row, OK in a confirmation, PLAY while recording is armed, the STEP view's write cursor |
+| <Led state="blink">blinking</Led> | waiting | a queued pattern, a cued song row, OK in a confirmation, PLAY while recording is armed |
 
 <Strip>
-  <Step shot="seq-step" at="cell:1,4"><Led state="blink" /> STEP view: the write cursor blinks.</Step>
+  <Step shot="confirm" at="10,70,104,26"><Led state="blink" /> A confirmation: OK blinks until you answer.</Step>
   <Step shot="tape-session-queued" at="cell:2,2"><Led state="blink" /> A queued pattern: waits for the loop to finish.</Step>
   <Step shot="seq-recording" at="strip:PLAY"><Led state="blink" /> Record armed: PLAY blinks.</Step>
 </Strip>
@@ -63,8 +63,7 @@ Each key has 16 real brightness levels (driven by the device's hardware layer, C
 
 | Screen | GRID lights |
 |---|---|
-| SEQ note page | the page on screen: empty steps off, steps with notes half lit, selected ones fully lit, the playhead runs across fully lit, steps beyond the pattern's length off; in the STEP view the write cursor blinks |
-| SEQ DRUMS | the chosen drum's hits fully lit, steps with only other drums half lit, empty steps off |
+| SEQ note page (ROLL, STEP and the drum machine alike) | the page on screen: empty steps off, steps with notes half lit, selected ones fully lit, the playhead runs across fully lit, steps beyond the pattern's length off; while you hold pads (nothing selected), the steps that hold their notes are fully lit |
 | SEQ PATTERN | existing patterns half lit, the one in use fully lit, a queued one blinks; NEW and empty slots off |
 | SEQ TRACK | the four settings half lit, the focused one fully lit |
 | RECORD panel | settings half lit, REC and SNAP fully lit when on, the focus fully lit; takes half lit |
@@ -83,7 +82,7 @@ Each key has 16 real brightness levels (driven by the device's hardware layer, C
 | text entry | character keys half lit; erase, OK and space half lit |
 
 - **The pads** are always the current track's keyboard: keys that sound half lit, held and sounding keys fully lit (with the other notes of a chord, the arpeggiator's note and the notes the sequencer plays on this track), keys that cannot sound off (see [Keyboard layouts](./play.mdx#play-keyboard)). In SEQ the notes of the selected step, or while playing those of the playing step, are fully lit.
-- **Drum tracks** are the one exception to the three levels: at rest the pad columns glow a little brighter towards the top row (harder), and a hit lights its column from the bottom up to its row.
+- **Drum tracks** are the one exception to the three levels: at rest their pads are half lit like any pad, but a held pad lights its column from the bottom up to its row, and a hit runs up and down its column, further the harder it is. On screen the pads keep their blocks and show how hard by dither density.
 - **The four left keys**: ESC, TAB and FN half lit, CTRL half lit when the screen has pages; a held key fully lit; FN fully lit while its menu is kept open (TAB and CTRL are off then, as in every pop-up). Just after a track change only the key of that track's row lights for a moment (T1 = ESC row … T4 = CTRL row).
 - **Right side**: ADD / SUB half lit when there is something to change, OK half lit when it has an action (fully lit in the SEQ STEP view), PLAY half lit when stopped, fully lit when playing, blinking while recording is armed.
 
@@ -120,7 +119,7 @@ The 4 + 4 strips on the screen's left and right edges **are the lights of the 8 
 | <Led state="half">half lit</Led> | 30 % dither |
 | <Led state="full">fully lit</Led> | solid (the right-hand glyph turns black) |
 
-Holds, the track hint, maps and blinking always match between screen and keys. The right strips also say more: the ADD / SUB glyphs show what they do here (+ −, arrows, erase), and the PLAY strip is green while playing and red while recording is armed.
+Holds, the track hint, maps and blinking always match between screen and keys. The right strips also say more: the ADD / SUB glyphs show what they do here (▲ ▼ for a value or a list, → ← sideways, erase), and the PLAY strip is green while playing and red while recording is armed.
 
 :::tip
 

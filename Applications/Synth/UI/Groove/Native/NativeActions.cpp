@@ -167,7 +167,13 @@ bool Controller::NativeNoteDown(std::uint8_t id, std::uint8_t note, std::uint8_t
   velocity = velocity == 0 ? state_.keyboard.velocity : std::min<std::uint8_t>(velocity, 127);
   bool editing = false;
   if (state_.scene == Scene::Sequence && CurrentPage() == 0)
-    editing = PadForSequence(chord.data(), count, true, drums ? velocity : std::uint8_t{0});
+  {
+    // Touch contacts retain their immediate toggle semantics; PadForSequence
+    // now owns the physical keyboard's indexed hold/release edit state.
+    editing = sequencer.HasHeldSteps();
+    if (editing && sequencer.ToggleNotesOnSelectedSteps(chord.data(), count, drums ? velocity : std::uint8_t{0}))
+      MarkDirty();
+  }
   const bool audition = !editing || !sequencer.Playing();
   *fresh = NativeContact{true, id, static_cast<std::uint8_t>(state_.track), note, static_cast<std::uint8_t>(audition ? count : 0), velocity,
       audition && !drums && sequencer.GetArpSettings(state_.track).mode != synth::ArpMode::Off, chord};

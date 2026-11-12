@@ -22,6 +22,23 @@ else()
 endif()
 add_test(NAME CardenzaArpTests COMMAND CardenzaArpTests)
 
+# HITS (a note fired 1..4 times in its step): playback on the hand-stepped clock, the lane edits, and
+# the project formats 7 and 8 (the storage's test hook writes format 8 before the bump).
+add_executable(CardenzaHitsTests
+  hits_test.cpp
+  ${PROJECT_SOURCE_DIR}/Applications/Synth/Runtime/ProjectStorage.cpp
+  ${PROJECT_SOURCE_DIR}/Applications/Synth/Runtime/Sequencer/SynthSequencer.cpp
+  ${PROJECT_SOURCE_DIR}/OS/Framework/Midi/MidiPacket.cpp
+)
+target_include_directories(CardenzaHitsTests PRIVATE ${PROJECT_SOURCE_DIR})
+target_compile_definitions(CardenzaHitsTests PRIVATE CARDENZA_SEQUENCER_TEST_HOOKS=1 CARDENZA_PROJECT_TEST_HOOKS=1)
+if(MSVC)
+  target_compile_definitions(CardenzaHitsTests PRIVATE _CRT_SECURE_NO_WARNINGS)
+else()
+  target_link_libraries(CardenzaHitsTests PRIVATE pthread)
+endif()
+add_test(NAME CardenzaHitsTests COMMAND CardenzaHitsTests)
+
 # The SD-only storage protocol (2) on the simulator's card, with the card taken out and put back, and a
 # run that starts without one.
 cardenza_collect_storage_cpp_sources(${PROJECT_SOURCE_DIR} storage_test_sources)

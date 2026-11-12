@@ -1,6 +1,7 @@
 // Groovebox UI workflow tests: the real GrooveApp and runtime on the simulator device, driven key by
 // key with a fake clock so hold, repeat and transition timing is deterministic.
 #include <algorithm>
+#include <bitset>
 #include <array>
 #include <cassert>
 #include <chrono>
@@ -10,6 +11,7 @@
 #include <iterator>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <random>
 #include <string>
 #include <vector>
@@ -750,6 +752,45 @@ void TestProject(Harness& h)
   // Keys pressed before the name field opened are released cleanly.
   assert(!h.State().gridDown[2]);
 
+  // RENAME (FN menu, next to SAVE AS): the file on the card changes its name, no copy is left, and the
+  // open project goes on under the new one.
+  h.Chord(kFn, Grid(3));
+  assert(h.Modal() != nullptr && h.Modal()->kind == ModalKind::TextEntry && h.Modal()->text == "GROOVE 1");
+  for (int index = 0; index < 8; ++index) h.Tap(kDel);
+  TypeText(h, "GROOVE 2");
+  h.Tap(kEnter);
+  assert(h.Modal() == nullptr && h.State().projectName == "GROOVE 2" && !h.State().dirty);
+  {
+    const auto renamed = app.ListProjects();
+    assert(std::find(renamed.begin(), renamed.end(), "GROOVE 2") != renamed.end());
+    assert(std::find(renamed.begin(), renamed.end(), "GROOVE 1") == renamed.end());
+  }
+  // A name another project has is refused; both stay as they were.
+  h.Chord(kFn, Grid(2));  // SAVE AS GROOVE 3: a second project
+  for (int index = 0; index < 8; ++index) h.Tap(kDel);
+  TypeText(h, "GROOVE 3");
+  h.Tap(kEnter);
+  assert(h.State().projectName == "GROOVE 3");
+  h.Chord(kFn, Grid(3));
+  for (int index = 0; index < 8; ++index) h.Tap(kDel);
+  TypeText(h, "GROOVE 2");
+  h.Tap(kEnter);
+  assert(h.Modal() == nullptr && h.State().projectName == "GROOVE 3");
+  assert(h.State().toast.text.find("TAKEN") != std::string::npos);
+  {
+    const auto both = app.ListProjects();
+    assert(std::count(both.begin(), both.end(), "GROOVE 2") == 1 && std::count(both.begin(), both.end(), "GROOVE 3") == 1);
+  }
+  // Back to GROOVE 1, the name the rest of this test expects (and ESC in the field changes nothing).
+  h.Chord(kFn, Grid(3));
+  h.Tap(kEsc);
+  assert(h.Modal() == nullptr && h.State().projectName == "GROOVE 3");
+  h.Chord(kFn, Grid(3));
+  for (int index = 0; index < 8; ++index) h.Tap(kDel);
+  TypeText(h, "GROOVE 1");
+  h.Tap(kEnter);
+  assert(h.State().projectName == "GROOVE 1");
+
   // Saving again under the same name overwrites silently.
   h.Tap(Grid(0));
   assert(h.Modal() == nullptr && !h.State().dirty);
@@ -786,6 +827,19 @@ void TestProject(Harness& h)
   assert(app.MasterFx(reverbSize) == synth::fx::kMasterParams[reverbSize].defaultValue - 1);
   assert(ParameterValue(app, 2, "fx.delay") == 11);
 
+  // RENAME on FILES acts on the project under the cursor, not the open one.
+  h.Tap(kSub);
+  assert(h.State().projects[h.State().fileCursor] == "GROOVE 2");
+  h.Chord(kFn, Grid(3));
+  assert(h.Modal() != nullptr && h.Modal()->text == "GROOVE 2");
+  for (int index = 0; index < 8; ++index) h.Tap(kDel);
+  TypeText(h, "OTHER");
+  h.Tap(kEnter);
+  assert(h.State().projectName == "GROOVE 1");
+  assert(std::count(h.State().projects.begin(), h.State().projects.end(), "OTHER") == 1);
+  assert(std::count(h.State().projects.begin(), h.State().projects.end(), "GROOVE 2") == 0);
+  assert(h.State().projects[h.State().fileCursor] == "OTHER");
+
   // SETUP SYSTEM page (CTRL steps the pages): key lights and screen.
   while (h.App().Ui().CurrentPage() != groove::kSetupSystem) h.Tap(kCtrl);
   assert(std::string(h.App().Ui().SettingsPageShown()->tab) == "SYSTEM");
@@ -808,6 +862,24 @@ void TestProject(Harness& h)
   assert(!app.Logging());
   h.Tap(kAdd);
   assert(app.Logging());
+  // THEME: the screen's palette (sys.theme), DARK unless picked; the next frame draws in it.
+  const auto fieldShown = [&] {
+    // The field is what most of a frame is.
+    h.Render();
+    const auto frame = Device::Display::CurrentFrameBuffer();
+    std::map<Device::Display::Pixel, std::size_t> counts;
+    for (std::size_t index = 0; index < static_cast<std::size_t>(frame.width) * frame.height; ++index) ++counts[frame.pixels[index]];
+    return std::max_element(counts.begin(), counts.end(), [](const auto& a, const auto& b) { return a.second < b.second; })->first;
+  };
+  assert(app.ScreenTheme() == os::storage::Theme::Dark && fieldShown() == groove::theme::kDarkPalette.field);
+  h.Tap(Grid(4));
+  h.Tap(kAdd);
+  assert(app.ScreenTheme() == os::storage::Theme::Light && fieldShown() == groove::theme::kLightPalette.field);
+  h.Tap(kAdd);
+  h.Tap(kAdd);  // RETRO is the last
+  assert(app.ScreenTheme() == os::storage::Theme::Retro && fieldShown() == groove::theme::kRetroPalette.field);
+  h.Chord(kFn, kEnter);  // the default
+  assert(app.ScreenTheme() == os::storage::Theme::Dark && fieldShown() == groove::theme::kDarkPalette.field);
   h.Tap(kEsc);
   assert(h.State().scene != Scene::Setup);
 }
@@ -1156,6 +1228,243 @@ void TestPlayFeatures(Harness& h)
   h.Up(kFn);
 }
 
+// SEQ note page, a lit pad (its note is in a selected step): a tap takes the note out when it lets go,
+// never while it is held; held, ADD / SUB act on its notes alone, on the current edit lane. NOTE moves
+// them a key of the keyboard at a time, past the step's other notes (on a drum track to the next drum
+// of the kit); LEN / VEL / TIME change only their values.
+void TestHeldPadEdits(Harness& h)
+{
+  auto& app = h.App();
+  auto& sequencer = app.Sequencer();
+  const Scene startScene = h.State().scene;
+  const std::size_t startTrack = h.State().track;
+  GoToScene(h, 2);
+  while (app.Ui().CurrentPage() != 0) h.Tap(kCtrl);
+  h.Chord(kTab, Grid(1));  // T2, melodic, chord off, the piano keyboard in C major
+  assert(h.State().track == 1 && !app.Ui().DrumTrack() && h.State().chords[1].chord == groove::ChordType::Off);
+  assert(h.State().keyboard.layout == groove::KeyboardLayout::Piano && h.State().keyboard.lock == groove::ScaleLock::Off &&
+         h.State().keyboard.octave == 0 && h.State().keyboard.scale == 0 && !h.State().keyboard.multiSelect);
+  assert(!sequencer.Playing() && h.Seq().editLane == synth::SequencerEditLane::Note);
+  const Key c3{3, 1}, d3{3, 2}, e3{3, 3}, g3{3, 5};
+  // Empty steps of the page on the GRID (the project's pattern has notes on some).
+  std::array<synth::SynthSequencer::StepNoteView, 8> views{};
+  std::vector<std::size_t> cells;
+  const std::size_t first = h.Seq().firstViewStep;
+  for (std::size_t cell = 0; cell < 16 && cells.size() < 3; ++cell)
+    if (sequencer.StepNoteEvents(1, first + cell, views) == 0) cells.push_back(cell);
+  assert(cells.size() == 3);
+  const auto pitches = [&](std::size_t cell) {
+    std::vector<int> notes;
+    const std::size_t count = sequencer.StepNoteEvents(1, first + cell, views);
+    for (std::size_t slot = 0; slot < count; ++slot) notes.push_back(views[slot].note);
+    std::sort(notes.begin(), notes.end());
+    return notes;
+  };
+  const auto event = [&](std::size_t cell, int note) {
+    const std::size_t count = sequencer.StepNoteEvents(1, first + cell, views);
+    for (std::size_t slot = 0; slot < count; ++slot)
+      if (views[slot].note == note) return views[slot];
+    assert(false);
+    return views[0];
+  };
+  const std::array<std::uint8_t, 3> triad{48, 52, 55};
+  assert(sequencer.ToggleStepNotes(1, first + cells[0], triad.data(), triad.size()));
+  h.Tap(Grid(cells[0]));
+  assert(h.Seq().steps[cells[0]].held);
+
+  // A tap on a lit pad: E comes out at the release, not before.
+  h.Down(e3);
+  assert((pitches(cells[0]) == std::vector<int>{48, 52, 55}));
+  h.Wait(600);  // however long it is held
+  assert((pitches(cells[0]) == std::vector<int>{48, 52, 55}));
+  h.Up(e3);
+  assert((pitches(cells[0]) == std::vector<int>{48, 55}));
+  // A pad whose note is not there puts it in as it goes down.
+  h.Down(e3);
+  assert((pitches(cells[0]) == std::vector<int>{48, 52, 55}));
+  h.Up(e3);
+  assert((pitches(cells[0]) == std::vector<int>{48, 52, 55}));
+
+  // Held + ADD: C moves up a semitone, the chord's other notes stay, and the release keeps it. It sounds
+  // where it went (stopped), and the next ADD moves the same note, now on another pad's key; E is taken,
+  // so C# D D# ... F.
+  const auto velocity = event(cells[0], 48).velocity;
+  const auto length = event(cells[0], 48).lengthPulses;
+  h.Down(c3);
+  h.Tap(kAdd);
+  assert((pitches(cells[0]) == std::vector<int>{49, 52, 55}) && h.State().hud.label == "NOTE" && h.State().hud.value == "C#3");
+  assert(h.State().padChord[PadSlot(c3)][0] == 49 && h.State().padChordCount[PadSlot(c3)] == 1);
+  h.Tap(kAdd);
+  h.Tap(kAdd);
+  assert((pitches(cells[0]) == std::vector<int>{51, 52, 55}));
+  h.Tap(kAdd);  // past E
+  assert((pitches(cells[0]) == std::vector<int>{52, 53, 55}) && h.State().hud.value == "F3");
+  assert(event(cells[0], 53).velocity == velocity && event(cells[0], 53).lengthPulses == length);
+  h.Tap(kSub);
+  assert((pitches(cells[0]) == std::vector<int>{51, 52, 55}));
+  h.Up(c3);
+  assert((pitches(cells[0]) == std::vector<int>{51, 52, 55}) && h.Seq().steps[cells[0]].held);
+  // ADD / SUB without a pad are the lane's again: the whole step.
+  h.Tap(kAdd);
+  assert((pitches(cells[0]) == std::vector<int>{52, 53, 56}));
+  h.Tap(kSub);
+  // The pad lets go while ADD repeats: the repeat does nothing more (no lane edit, no page flip).
+  h.Down(e3);
+  h.Down(kAdd);
+  h.Up(e3);
+  const auto moved = pitches(cells[0]);
+  assert((moved == std::vector<int>{51, 53, 55}));
+  h.Wait(900);
+  assert(pitches(cells[0]) == moved && h.Seq().steps[cells[0]].held);
+  h.Up(kAdd);
+
+  // Other lanes: the held pad's note alone. VEL (OK twice), then LEN and TIME.
+  h.Tap(kEnter);
+  h.Tap(kEnter);
+  assert(h.Seq().editLane == synth::SequencerEditLane::Velocity);
+  const auto gVelocity = event(cells[0], 55).velocity;
+  const auto otherVelocity = event(cells[0], 51).velocity;
+  h.Down(g3);
+  h.Tap(kSub);
+  h.Tap(kSub);
+  h.Up(g3);
+  assert(event(cells[0], 55).velocity == gVelocity - 2 && event(cells[0], 51).velocity == otherVelocity);
+  assert(h.State().hud.label == "VEL G3" && h.State().hud.value == std::to_string(gVelocity - 2));
+  assert((pitches(cells[0]) == std::vector<int>{51, 53, 55}));  // the release kept it
+  h.Tap(kEnter);  // TIME
+  assert(h.Seq().editLane == synth::SequencerEditLane::Micro);
+  h.Down(g3);
+  h.Tap(kAdd);
+  h.Up(g3);
+  assert(event(cells[0], 55).microstep == 1 && event(cells[0], 51).microstep == 0 && event(cells[0], 53).microstep == 0);
+  // HITS: the held pad's note fires 3 times in its step, the others stay single; the edit strip names
+  // the lane and the HUD the note.
+  h.Tap(kEnter);
+  assert(h.Seq().editLane == synth::SequencerEditLane::Hits && h.Seq().valueLabel == "HITS 1");
+  h.Down(g3);
+  h.Tap(kAdd);
+  h.Tap(kAdd);
+  h.Up(g3);
+  assert(event(cells[0], 55).hits == 3 && event(cells[0], 51).hits == 1 && event(cells[0], 53).hits == 1);
+  assert(h.State().hud.label == "HITS G3" && h.State().hud.value == "3" && h.Seq().valueLabel == "HITS MIXED");
+  assert((pitches(cells[0]) == std::vector<int>{51, 53, 55}));  // the release kept it
+  // Without a pad, the whole step: up to 4 and no further, back down to 1.
+  for (int press = 0; press < 4; ++press) h.Tap(kAdd);
+  assert(event(cells[0], 55).hits == 4 && event(cells[0], 51).hits == 4 && h.Seq().valueLabel == "HITS 4");
+  for (int press = 0; press < 4; ++press) h.Tap(kSub);
+  assert(event(cells[0], 55).hits == 1 && event(cells[0], 53).hits == 1 && h.Seq().valueLabel == "HITS 1");
+  h.Tap(kEnter);  // NOTE
+  h.Tap(kEnter);  // LEN
+  assert(h.Seq().editLane == synth::SequencerEditLane::Length);
+  const auto gLength = event(cells[0], 55).lengthPulses;
+  h.Down(g3);
+  h.Tap(kAdd);
+  h.Up(g3);
+  assert(event(cells[0], 55).lengthPulses > gLength && event(cells[0], 51).lengthPulses == length);
+  h.Tap(kEnter);
+  h.Tap(kEnter);
+  h.Tap(kEnter);
+  h.Tap(kEnter);  // back to NOTE
+  assert(h.Seq().editLane == synth::SequencerEditLane::Note);
+  h.Tap(kEsc);
+  assert(!h.Seq().hasHeldSteps);
+
+  // Several steps selected (held together): the note moves on each that has it; a step without it
+  // neither moves nor blocks the move.
+  const std::uint8_t c = 48, d = 50;
+  assert(sequencer.SetStepNotes(1, first + cells[1], &c, 1, 100) && sequencer.SetStepNotes(1, first + cells[2], &d, 1, 100));
+  h.Down(Grid(cells[1]));
+  h.Down(Grid(cells[2]));
+  h.Down(c3);
+  h.Tap(kAdd);
+  h.Tap(kAdd);  // C# D: D is only in the step that has no C
+  h.Up(c3);
+  h.Up(Grid(cells[2]));
+  h.Up(Grid(cells[1]));
+  assert((pitches(cells[1]) == std::vector<int>{50}) && (pitches(cells[2]) == std::vector<int>{50}));
+  assert((pitches(cells[0]) == std::vector<int>{51, 53, 55}) && !h.Seq().hasHeldSteps);
+
+  // The CHORD effect: a pad is its chord, and its notes move as the next key's chord (C# borrows a
+  // major chord, D is the scale's D minor).
+  GoToInstrumentPage(h, "CHORD");
+  h.Tap(kAdd);
+  assert(h.State().chords[1].chord == groove::ChordType::Triad);
+  GoToScene(h, 2);
+  assert(sequencer.SetStepNotes(1, first + cells[1], triad.data(), triad.size(), 100));
+  h.Tap(Grid(cells[1]));
+  h.Down(c3);
+  h.Tap(kAdd);
+  assert((pitches(cells[1]) == std::vector<int>{49, 53, 56}));
+  h.Tap(kAdd);
+  assert((pitches(cells[1]) == std::vector<int>{50, 53, 57}) && h.State().hud.value == "D3 F3 A3");
+  h.Up(c3);
+  assert((pitches(cells[1]) == std::vector<int>{50, 53, 57}));
+  h.Tap(d3);  // D's chord is there now: a tap takes it out
+  assert(pitches(cells[1]).empty());
+  h.Tap(kEsc);
+  GoToInstrumentPage(h, "CHORD");
+  h.Tap(kSub);
+  assert(h.State().chords[1].chord == groove::ChordType::Off);
+  GoToScene(h, 2);
+  for (const std::size_t cell : cells) assert(sequencer.SetStepNotes(1, first + cell, nullptr, 0, 0));
+
+  // A drum track: NOTE moves a held hit to the next drum of the kit the step does not hold, keeping its
+  // values (and the release keeps it); the other lanes edit it.
+  h.Chord(kTab, Grid(0));
+  assert(app.Ui().DrumTrack());
+  const Key bd{0, 1}, sd{0, 2};
+  const std::size_t drumFirst = h.Seq().firstViewStep;
+  std::size_t drumCell = 0;
+  while (drumCell < 16 && sequencer.StepNoteEvents(0, drumFirst + drumCell, views) != 0) ++drumCell;
+  assert(drumCell < 16);
+  const std::array<std::uint8_t, 2> hits{36, 38};
+  assert(sequencer.SetStepNotes(0, drumFirst + drumCell, hits.data(), hits.size(), 100));
+  const auto drumPitches = [&]() {
+    std::vector<int> notes;
+    const std::size_t count = sequencer.StepNoteEvents(0, drumFirst + drumCell, views);
+    for (std::size_t slot = 0; slot < count; ++slot) notes.push_back(views[slot].note);
+    std::sort(notes.begin(), notes.end());
+    return notes;
+  };
+  h.Tap(Grid(drumCell));
+  h.Down(bd);
+  h.Tap(kAdd);  // BD past SD (there already) to CH
+  assert((drumPitches() == std::vector<int>{38, 42}) && h.State().hud.label == "DRUM" && h.State().hud.value == "CH");
+  assert(app.Ui().DrumLane() == 2);
+  for (std::size_t slot = 0; slot < sequencer.StepNoteEvents(0, drumFirst + drumCell, views); ++slot) assert(views[slot].velocity == 100);
+  h.Tap(kSub);  // back past SD to BD
+  assert((drumPitches() == std::vector<int>{36, 38}) && h.State().hud.value == "BD");
+  h.Tap(kSub);  // no drum below BD
+  assert((drumPitches() == std::vector<int>{36, 38}));
+  h.Up(bd);
+  assert((drumPitches() == std::vector<int>{36, 38}));
+  h.Down(sd);
+  assert(sequencer.StepNoteEvents(0, drumFirst + drumCell, views) == 2);
+  h.Up(sd);
+  assert(sequencer.StepNoteEvents(0, drumFirst + drumCell, views) == 1 && views[0].note == 36);
+  h.Tap(kEnter);
+  h.Tap(kEnter);  // VEL
+  h.Down(bd);
+  h.Tap(kSub);
+  h.Up(bd);
+  assert(sequencer.StepNoteEvents(0, drumFirst + drumCell, views) == 1 && views[0].velocity == 99 && h.State().hud.label == "VEL BD");
+  h.Tap(kEnter);
+  h.Tap(kEnter);  // HITS: a roll on the held hit
+  h.Down(bd);
+  h.Tap(kAdd);
+  h.Tap(kAdd);
+  h.Tap(kAdd);
+  h.Up(bd);
+  assert(sequencer.StepNoteEvents(0, drumFirst + drumCell, views) == 1 && views[0].hits == 4 && h.State().hud.label == "HITS BD" &&
+         h.State().hud.value == "4");
+  h.Tap(kEnter);  // back to NOTE
+  assert(h.Seq().editLane == synth::SequencerEditLane::Note);
+  h.Tap(kEsc);
+  assert(sequencer.SetStepNotes(0, drumFirst + drumCell, nullptr, 0, 0));
+  h.Chord(kTab, Grid(startTrack));
+  if (h.State().scene != startScene) GoToScene(h, static_cast<int>(startScene));
+}
+
 void TestFnQuick(Harness& h)
 {
   auto& app = h.App();
@@ -1244,6 +1553,8 @@ void TestRecording(Harness& h)
   assert(h.Seq().editLane == synth::SequencerEditLane::Length && app.Ui().View() == groove::SeqView::Step);
   h.Tap(kEnter);
   h.Tap(kEnter);
+  h.Tap(kEnter);
+  assert(h.Seq().editLane == synth::SequencerEditLane::Hits);
   h.Tap(kEnter);
   assert(h.Seq().editLane == synth::SequencerEditLane::Note && h.Seq().steps[0].held);
   // A tap on the step selected alone lets it go, and the pads play again.
@@ -2724,6 +3035,15 @@ void TestGuide(Harness& h)
   };
   listen();
   heard.clear();
+  // The user's keyboard is CHROMA (every pad a semitone): the lessons play with it.
+  const auto setLayout = [&](groove::KeyboardLayout layout, Key step) {
+    GoToSetupPage(h, groove::kSetupKeys);
+    h.Tap(Grid(0));  // LAYOUT
+    for (int tries = 0; tries < 4 && h.State().keyboard.layout != layout; ++tries) h.Tap(step);
+    assert(h.State().keyboard.layout == layout);
+    h.Tap(kEsc);
+  };
+  setLayout(groove::KeyboardLayout::Chromatic, kAdd);
   // The working state: SEQ, T1 with one hit on step 3.
   GoToScene(h, 2);
   h.Chord(kTab, Grid(0));
@@ -2747,6 +3067,45 @@ void TestGuide(Harness& h)
   assert(field('s') == 1 && field('p') == 0 && field('t') == 0 && field('h') == 0 && hits(0) == 0);
   assert(state().find("nVOICE") != std::string::npos);
   h.Render();
+
+  // The practice project has the user's keyboard; f1 gives a lesson a new project's (PIANO). Its pages are
+  // those of a new start: SETUP opens on PROJECT, though the user left it on KEYS.
+  assert(field('z') == 2);
+  send("GLs0");
+  assert(field('s') == 0 && field('p') == 0);
+  // Every pad of the hint lights, all 32 in two messages (one holds 29: kAppMessageSize), and none the
+  // keyboard leaves silent: PIANO's gaps stay dark.
+  const auto hex = [](std::size_t key) { return std::string(1, "0123456789abcdef"[key / 16]) + "0123456789abcdef"[key % 16]; };
+  std::string first = "GH", rest = "G+";
+  std::size_t listed = 0;
+  for (std::size_t row = 0; row < 4; ++row)
+    for (std::size_t column = 1; column <= 8; ++column) (listed++ < 29 ? first : rest) += hex(groove::KeyIndex(row, column));
+  assert(first.size() <= Device::USB::kAppMessageSize);
+  const auto padsFull = [&]() {
+    groove::LedFrame frame{};
+    ui.ComputeLeds(frame);
+    std::uint64_t full = 0;
+    for (std::size_t row = 0; row < 4; ++row)
+      for (std::size_t column = 1; column <= 8; ++column)
+        if (frame[groove::KeyIndex(row, column)].level == groove::kLedFull) full |= std::uint64_t{1} << groove::KeyIndex(row, column);
+    return full;
+  };
+  send("GLs1p0t2");
+  send(first);
+  send(rest);
+  assert(std::bitset<64>(padsFull()).count() == 32);
+  send("GLr1f1s1p0t2");
+  assert(field('z') == 0 && h.State().track == 1);
+  send(first);
+  send(rest);
+  const std::uint64_t lit = padsFull();
+  assert(std::bitset<64>(lit).count() == 26);
+  for (const std::size_t row : {0u, 2u})
+    for (const std::size_t column : {1u, 4u, 8u}) assert(((lit >> groove::KeyIndex(row, column)) & 1u) == 0);
+  assert(((lit >> groove::KeyIndex(3, 8)) & 1u) != 0);  // from G+
+  send("GLr1s1p0t1");
+  assert(field('z') == 2 && field('t') == 0);
+  send("GH");
 
   // The hint, as the lesson page shows it: ESC and ADD full, every other key no brighter than half; on
   // the device the two edge keys go full too (otherwise held to the dimmest glow). While the step waits
@@ -2837,6 +3196,8 @@ void TestGuide(Harness& h)
   // The end: the working state is back, where the user left it.
   send("GX");
   assert(sent("GX") && !ui.Guide());
+  // The user's pages are theirs again: SETUP where they left it.
+  assert(h.State().page[static_cast<std::size_t>(Scene::Setup)] == groove::kSetupKeys);
   assert(h.State().scene == Scene::Sequence && h.State().track == 0 && hits(0) == 1);
   std::array<synth::SynthSequencer::StepNoteView, 8> notes{};
   assert(app.Sequencer().StepNoteEvents(0, 2, notes) == 1 && app.Sequencer().PatternCount(0) == 1);
@@ -2852,6 +3213,7 @@ void TestGuide(Harness& h)
   // While nothing runs, messages without G are ignored, and a guide message after the end is too.
   send("GH000d");
   assert(ui.GuideHint() == 0);
+  setLayout(groove::KeyboardLayout::Piano, kSub);
 }
 
 // Every cell of every page of every scene, on every engine, stopped and playing: moved both ways, in
@@ -3016,6 +3378,7 @@ int main()
   TestRecording(h);
   TestSelectMode(h);
   TestLongCapture(h);
+  TestHeldPadEdits(h);
   TestLongPatternUi(h);
   TestSampleRecording(h);
   TestDrumMachine(h);

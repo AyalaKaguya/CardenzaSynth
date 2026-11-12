@@ -9,8 +9,10 @@
 //   GP        still here (any G message is) -
 //   GQ        the state now                 GS<Controller::GuideState()>
 //   GL<pairs> lesson start: r1 a fresh      GS... (s scene, p page, t track 1-4, d<n> the song
-//             practice project               lessons' song as lessons 1..n made it)
-//   GH<keys>  the step's keys, blinking: two hex digits per KeyIndex, none clears
+//             practice project (with the     lessons' song as lessons 1..n made it, f1 a new project's
+//             user's keyboard)                keyboard instead of the user's)
+//   GH<keys>  the step's keys, blinking: two hex digits per KeyIndex, none clears; a message holds
+//             29 keys at most (kAppMessageSize), G+<keys> adds the rest to the last GH / GT
 //   GT<keys>  the same, steady: the step is learned and the user tries more keys
 //   GK<kk><0|1> press / release a key       GK<kk><0|1> for every key the user presses
 //                                           GD<56 hex digits> the key lights as shown (over USB)
@@ -153,6 +155,7 @@ void GrooveApp::HandleGuideMessage(const char* text, std::size_t length, std::ui
       return;
     case 'H':
     case 'T':
+    case '+':
     {
       std::uint64_t keys = 0;
       for (std::size_t at = 2; at + 1 < length; at += 2)
@@ -160,7 +163,9 @@ void GrooveApp::HandleGuideMessage(const char* text, std::size_t length, std::ui
         const int index = HexByte(text + at);
         if (index >= 0 && static_cast<std::size_t>(index) < groove::kKeyCount) keys |= std::uint64_t{1} << index;
       }
-      controller_.SetGuideHint(keys, text[1] == 'H');
+      // All 32 pads do not fit one message: G+ carries the ones after the first 29.
+      if (text[1] == '+') controller_.SetGuideHint(controller_.GuideHint() | keys, controller_.GuideHintWaits());
+      else controller_.SetGuideHint(keys, text[1] == 'H');
       return;
     }
     case 'K':
@@ -207,6 +212,9 @@ bool GrooveApp::EnterGuide(std::string& reason)
   guideScene_ = view.scene;
   guidePage_ = controller_.CurrentPage();
   guideSongMode_ = sequencer_.SongMode();
+  // The user's keyboard (layout, scale, octave, ...) is a setting of theirs: the lessons play with it.
+  guideKeyboard_ = controller_.Settings().keyboard;
+  controller_.GuideKeepView();
   if (!FreshGuideProject())
   {
     // Nothing was replaced: the working state is still here.
@@ -224,7 +232,9 @@ bool GrooveApp::EnterGuide(std::string& reason)
 }
 
 // An empty practice project on INSTR VOICE, T1, as after power-on.
-bool GrooveApp::FreshGuideProject()
+// A new practice project, with the user's keyboard, or a new project's (newKeyboard: a lesson that
+// changes the keyboard, or names the notes of keys).
+bool GrooveApp::FreshGuideProject(bool newKeyboard)
 {
   sequencer_.Stop();
   sequencer_.SetSongMode(false);
@@ -233,7 +243,9 @@ bool GrooveApp::FreshGuideProject()
   groove::ProjectUiSettings ui;
   std::string message;
   if (!NewProject(ui, message)) return false;
+  if (!newKeyboard) ui.keyboard = guideKeyboard_;
   controller_.Restore(ui, "");
+  controller_.GuideFreshView();
   controller_.GuideGoTo(groove::Scene::Instrument, 0, synth::kDefaultActiveTrack);
   return true;
 }
@@ -255,6 +267,7 @@ void GrooveApp::ExitGuide()
   if (RestoreSessionState())
   {
     sequencer_.SetSongMode(guideSongMode_);
+    controller_.GuideRestoreView();
     controller_.GuideGoTo(guideScene_, guidePage_, controller_.State().track);
   }
   else
@@ -272,7 +285,7 @@ void GrooveApp::ExitGuide()
 void GrooveApp::GuideSetup(const char* fields, std::size_t length)
 {
   int scene = -1, page = -1, track = -1, song = 0;
-  bool fresh = false;
+  bool fresh = false, newKeyboard = false;
   for (std::size_t at = 0; at < length;)
   {
     const char field = fields[at++];
@@ -289,8 +302,9 @@ void GrooveApp::GuideSetup(const char* fields, std::size_t length)
     if (field == 't' && value >= 1 && value <= static_cast<int>(synth::kSynthTrackCount)) track = value - 1;
     if (field == 'r') fresh = value != 0;
     if (field == 'd') song = value;
+    if (field == 'f') newKeyboard = value != 0;
   }
-  if ((fresh || song > 0) && !FreshGuideProject()) return;
+  if ((fresh || song > 0) && !FreshGuideProject(newKeyboard)) return;
   if (song > 0) FillGuideSong(song);
   const auto& view = controller_.State();
   if (scene < 0 && page < 0 && track < 0) return;

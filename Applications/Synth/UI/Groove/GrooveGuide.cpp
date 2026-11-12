@@ -23,6 +23,36 @@ void Controller::GuideGoTo(Scene scene, int page, std::size_t track)
   if (page >= 0) SetPage(static_cast<std::uint8_t>(page));
 }
 
+// Where the device stands on every page: each scene's page, each track's INSTR page and the focused
+// cells, the drum or note the pads chose, SEQ's views and the song and session cursors. A lesson's
+// practice project starts from those of a new start (where the user went, SETUP KEYS or TAPE MIX, would
+// make "tap CTRL: the next page" land somewhere else), and the user's come back when the guide ends.
+void Controller::CopyView(UiState& to, const UiState& from)
+{
+  to.page = from.page;
+  to.drumLane = from.drumLane;
+  to.drumVelocity = from.drumVelocity;
+  to.noteLane = from.noteLane;
+  to.instrumentFocus = from.instrumentFocus;
+  to.trackInstrumentPage = from.trackInstrumentPage;
+  to.trackInstrumentFocus = from.trackInstrumentFocus;
+  to.projectFocus = from.projectFocus;
+  to.seqTrackFocus = from.seqTrackFocus;
+  to.mixFocus = from.mixFocus;
+  to.sendsFocus = from.sendsFocus;
+  to.fxFocus = from.fxFocus;
+  to.settingsFocus = from.settingsFocus;
+  to.songRow = from.songRow;
+  to.songTrack = from.songTrack;
+  to.songScroll = from.songScroll;
+  to.songLane = from.songLane;
+  to.sessionScroll = from.sessionScroll;
+  to.sessionPattern = from.sessionPattern;
+  to.sessionTrack = from.sessionTrack;
+  to.record.noteView = from.record.noteView;
+  to.record.drumView = from.record.drumView;
+}
+
 std::string Controller::GuideState() const
 {
   const auto& sequencer = host_.Sequencer();

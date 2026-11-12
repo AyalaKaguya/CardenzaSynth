@@ -388,14 +388,13 @@ void TestSequencerWorkflow() {
   assert(state.noteNames == noteName(noteA) + " " + noteName(noteB));
   assert(state.populatedStepCount == 2 && state.patternHasEvents[0]);
 
-  // Scope edits affect the selected chord note across all held steps. Releasing
-  // a lane key keeps that editing lane visibly selected until the steps release.
+  // Lane edits affect every note of the held steps. Releasing a lane key keeps that
+  // editing lane visibly selected until the steps release.
   app.HandleMatrixKeyEvent(SequencerStepRow(0), SequencerStepColumn(0), true);
   state = Screen(app).sequencer;
-  assert(state.primaryHeldStep == 0 && state.heldStepCount == 2 && state.scopedNote == -1);
+  assert(state.primaryHeldStep == 0 && state.heldStepCount == 2);
   Tap(app, 0, kHomeLeftBarColumn);
-  state = Screen(app).sequencer;
-  assert(state.scopedNote == noteA && state.scopeLabel == "1/2");
+  assert(Screen(app).sequencer.editLane == SequencerEditLane::Note);
   Tap(app, 1, kHomeLeftBarColumn);
   assert(Screen(app).sequencer.editLane == SequencerEditLane::Length && Screen(app).leftBarItems[1].active);
   Tap(app, 3, 4); // Four 16th-note steps.
@@ -421,7 +420,7 @@ void TestSequencerWorkflow() {
     const auto b = std::find_if(notes.begin(), notes.end(), [noteB](const auto& note) { return note.active && note.note == noteB; });
     assert(a != notes.end() && b != notes.end());
     assert(a->lengthPulses == 4 * kSequencerPulsesPerStep && a->velocity == 88 && a->microstep == 3);
-    assert(b->lengthPulses == kSequencerPulsesPerStep && b->velocity == 110 && b->microstep == 0);
+    assert(b->lengthPulses == 4 * kSequencerPulsesPerStep && b->velocity == 88 && b->microstep == 3);
   }
 
   // A single held OCT exposes Pattern actions. COPY can keep the layer open
@@ -913,13 +912,13 @@ void TestSequencerTapEditing() {
   Tap(app, 1, kHomeLeftBarColumn);
   Tap(app, 3, 4);
   assert(Screen(app).sequencer.valueLabel == "LEN 4");
-  Tap(app, 0, kHomeLeftBarColumn); // Return to notes without unexpectedly selecting one chord tone.
-  assert(Screen(app).sequencer.scopeLabel == "ALL" && Screen(app).sequencer.editLane == SequencerEditLane::Note);
+  Tap(app, 0, kHomeLeftBarColumn); // Back to the notes.
+  assert(Screen(app).sequencer.editLane == SequencerEditLane::Note);
   Tap(app, 0, kHomeLeftBarColumn);
-  assert(Screen(app).sequencer.scopeLabel == "1/3");
+  assert(Screen(app).sequencer.editLane == SequencerEditLane::Note);
   step(1);
   state = Screen(app).sequencer;
-  assert(state.selectionLatched && state.primaryHeldStep == 1 && !state.steps[0].held && state.scopeLabel == "ALL");
+  assert(state.selectionLatched && state.primaryHeldStep == 1 && !state.steps[0].held);
   Tap(app, 3, 2);
   assert(Screen(app).sequencer.steps[0].noteCount == 3 && Screen(app).sequencer.steps[1].noteCount == 1);
   Tap(app, 3, kHomeRightBarColumn);

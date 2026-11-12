@@ -22,7 +22,7 @@ sidebar_position: 12
   <KeyMark keys="G2 G4">空步：灭</KeyMark>
   <KeyMark keys="G1 G3">有音符：半亮</KeyMark>
   <KeyMark keys="G5">选中：全亮</KeyMark>
-  <KeyMark keys="r2c1">这一步的音：全亮</KeyMark>
+  <KeyMark keys="r3c1">这一步的音：全亮</KeyMark>
   <KeyMark keys="PADS">能发声：半亮</KeyMark>
   <Caption>SEQ 音符页走到第 5 步：灭、半亮、全亮一张图里都有。</Caption>
 </Shot>
@@ -32,10 +32,10 @@ sidebar_position: 12
 | <Led state="off">灭</Led> | 这里什么都没有 | 空的步、发不出声的键（钢琴缺口、被锁定的音阶外音）、当前画面没有的功能、关着的发送 |
 | <Led state="half">半亮</Led> | 有东西，没选中 | 有音符的步、能发声的键、选项、参数、能执行的动作、已有的 Pattern |
 | <Led state="full">全亮</Led> | 选中，或者正在发生 | 选中的步、焦点参数、当前的页 / 场景 / 轨道 / Pattern、按住或正在发声的键、播放头、开着的开关（静音、独奏、音序开） |
-| <Led state="blink">闪烁</Led> | 等待中 | 排队的 Pattern、提示跳转的编排行、确认框的 OK、录音待命时的 PLAY、STEP 视图的写入光标 |
+| <Led state="blink">闪烁</Led> | 等待中 | 排队的 Pattern、提示跳转的编排行、确认框的 OK、录音待命时的 PLAY |
 
 <Strip>
-  <Step shot="seq-step" at="cell:1,4"><Led state="blink" /> STEP 视图：写入光标在闪。</Step>
+  <Step shot="confirm" at="10,70,104,26"><Led state="blink" /> 确认框：OK 一直闪，等你回答。</Step>
   <Step shot="tape-session-queued" at="cell:2,2"><Led state="blink" /> 排队的 Pattern：等这一圈播完。</Step>
   <Step shot="seq-recording" at="strip:PLAY"><Led state="blink" /> 录音待命：PLAY 在闪。</Step>
 </Strip>
@@ -63,8 +63,7 @@ sidebar_position: 12
 
 | 画面 | GRID 上的灯 |
 |---|---|
-| SEQ 音符页 | 屏幕上这一页：空步灭，有音符的半亮，选中的全亮，播放头全亮走过，超出 Pattern 长度的步灭；STEP 视图里写入光标闪烁 |
-| SEQ DRUMS | 选中的鼓的击打全亮，只有别的鼓的步半亮，空步灭 |
+| SEQ 音符页（ROLL、STEP、鼓机都一样） | 屏幕上这一页：空步灭，有音符的半亮，选中的全亮，播放头全亮走过，超出 Pattern 长度的步灭；按住 PADS（没有选中的步）时，含有这些音的步全亮 |
 | SEQ PATTERN | 已有的 Pattern 半亮，正在用的全亮，排队的闪烁；NEW 和空槽灭 |
 | SEQ TRACK | 四个设置半亮，焦点全亮 |
 | RECORD 面板 | 设置半亮，REC、SNAP 打开时全亮，焦点全亮；take 半亮 |
@@ -83,7 +82,7 @@ sidebar_position: 12
 | 文字输入 | 字符键半亮；删除、OK 和空格半亮 |
 
 - **演奏区**永远是当前轨的键盘：能发声的半亮，按住和正在发声的全亮（包括和弦的其它音、ARP 弹的音和音序器在这一轨弹的音），发不出声的灭（见 [键盘排列](./play.mdx#play-keyboard)）。在 SEQ 里，选中那一步的音，或播放时正在播的那一步的音，全亮。
-- **鼓轨**是三档规则唯一的例外：静止时每一列越往上（越重）越亮一点，一击从这一列最下面亮到它的那一行。
+- **鼓轨**是三档规则唯一的例外：静止时和别的演奏键一样半亮；按住时这一列从最下面亮到按下的那一行，一击沿着这一列上下扩散，越重走得越远。屏幕上的鼓垫还是方块，力度用点阵疏密表示。
 - **左侧四个键**：ESC、TAB、FN 半亮，CTRL 在有多页时半亮；按住的键全亮；菜单常驻时 FN 全亮（这时 TAB、CTRL 灭，和所有弹窗一样）。刚换轨时，只有那条轨对应的那一行亮一下（T1 = ESC 行 … T4 = CTRL 行）。
 - **右侧**：ADD / SUB 有东西可调时半亮，OK 有动作时半亮（SEQ STEP 视图全亮），PLAY 停止半亮、播放全亮、录音待命闪烁。
 
@@ -120,7 +119,7 @@ sidebar_position: 12
 | <Led state="half">半亮</Led> | 30 % 点阵 |
 | <Led state="full">全亮</Led> | 实色（右侧的符号变黑） |
 
-按住、切轨提示、地图、闪烁，屏幕和键上永远一致。右侧色块还多说一点：ADD / SUB 的符号表示它们在这里做什么（+ −、方向、删除），PLAY 色块播放时是绿色，录音待命时是红色。
+按住、切轨提示、地图、闪烁，屏幕和键上永远一致。右侧色块还多说一点：ADD / SUB 的符号表示它们在这里做什么（调数值和列表是 ▲ ▼，横向移动是 → ←，删除），PLAY 色块播放时是绿色，录音待命时是红色。
 
 :::tip
 

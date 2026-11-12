@@ -4,11 +4,11 @@ sidebar_position: 13
 
 # 工程与存储
 
-一个**工程**是一首歌：四条轨道的音源和音色、所有 Pattern、编排、混音、每轨效果和总线效果、BPM 和 Swing、键盘设置，以及每条轨道的和弦和琶音。工程存在 SD 卡上，在 <Scene name="SETUP" /> 的 PROJECT 和 FILES 页保存、载入、新建。手上正在做的东西还会自动存在机器内部（见 [工作状态会被保留](#project-session)）。
+一个**工程**是一首歌：四条轨道的音源和音色、所有 Pattern、编排、混音、每轨效果和总线效果、BPM 和 Swing、键盘设置，以及每条轨道的和弦和琶音。工程存在 SD 卡上，在 <Scene name="SETUP" /> 的 PROJECT 和 FILES 页保存、载入、新建。手上正在做的东西也会自动存到卡上（见 [工作状态会被保留](#project-session)）。SD 卡是鸣片唯一存东西的地方：没有卡就什么都存不下。
 
 | 存在工程里 | 不在工程里 |
 |---|---|
-| 音源、音色、采样（按文件名）、Pattern、编排、混音（音量、静音、独奏、SEQ）、每轨和总线效果、BPM、Swing、键盘（KEYS）、和弦和琶音 | SELECT（应用偏好）、设备设置（音量、按键灯、屏幕）、LOOP / SONG、REC |
+| 音源、音色、采样（按文件名）、Pattern、编排、混音（音量、静音、独奏、SEQ）、每轨和总线效果、BPM、Swing、键盘（KEYS）、和弦和琶音 | SELECT（应用偏好）、设备设置（音量、按键灯、屏幕、日志）、LOOP / SONG、REC |
 
 <Keywords k="工程, 存档, 保存, 文件, 项目, 存了什么, project, file, save, storage" />
 
@@ -31,26 +31,27 @@ sidebar_position: 13
 - 有未保存的改动时，PROJECT 页工程名旁边写着 UNSAVED，FN 菜单的 SAVE 也写着 UNSAVED；新建或打开别的工程前会先确认（<Key k="OK" /> 是，<Key k="ESC" /> 否）。
 - PROJECT 和 FILES 页的 FN 菜单有 NEW、LOAD、SAVE AS。详见 [PROJECT 工程](./setup.mdx#setup-project) 和 [FILES 工程文件](./setup.mdx#setup-files)。
 - NEW 的工程是默认的四轨 <Track n="1" /> <Track n="2" /> <Track n="3" /> <Track n="4" />，演奏设置也是默认的（C 大调、没有和弦、琶音关闭）。
-- 保存失败时底部会说明原因：SD CARD ERROR（没有卡或写不进去）、SAVE SAMPLE FIRST（有一段录音还没保存）、NO MEMORY。载入失败：INVALID PROJECT、SAMPLE MISSING（工程用到的采样不在 `Shared/Samples` 里）。
-- 工程是纯文本文件，格式 7（`.ccproj`）；格式 1–6 也能读（6 之前的文件没有键盘、和弦和琶音，载入时保持现在的设置）。采样按文件名引用，在卡上改名或删除一个采样会影响所有用到它的工程。
+- 保存失败时底部会说明原因：NO SD CARD（开机时没有插卡）、SD CARD ERROR（卡写不进去）、SAVE SAMPLE FIRST（有一段录音还没保存）、NO MEMORY。载入失败：INVALID PROJECT、SAMPLE MISSING（工程用到的采样不在 `Samples/` 里）、NO MEMORY。
+- 工程是纯文本文件，格式 7（`.ccproj`）；格式 1–6 也能读（6 之前的文件没有键盘、和弦和琶音，载入时保持现在的设置）。0.1.0 版只能打开格式 1–6：这个固件保存的工程是格式 7。采样按文件名引用，在卡上改名或删除一个采样会影响所有用到它的工程。
 - 写文件是原子的：先写临时文件再替换，保存时断电也不会坏掉。
 
-<Keywords k="保存, 保存工程, 另存为, 新建工程, 打开工程, 未保存, 保存失败, 卡错误, save project, save as, new project, open project, unsaved, save failed" />
+<Keywords k="保存, 保存工程, 另存为, 新建工程, 打开工程, 未保存, 保存失败, 卡错误, 没有卡, save project, save as, new project, open project, unsaved, save failed, no sd card" />
 
 ## 工作状态会被保留 {#project-session}
 
-随时可以关机或直接拔电：当前的工作状态会自动存在机器的内部存储里（有没有卡都一样），下次开机原样回来。
+插着 SD 卡时，随时可以关机或直接拔电：当前的工作状态会自动存到卡上，下次开机原样回来。
 
 - 内容和工程一样，另外还记着工程名和是不是 UNSAVED（所以载入别的工程时照样会先问）。回来时停在 T1。
-- 在你停下来的时候写入：最后一次按键 1.5 秒后、没有按住的键、走带停止、没有在录音；如果一直在播放，最迟 60 秒写一次。切换到别的应用时马上写。
-- 它不是工程：只有 SAVE 才会把有名字的工程写到卡上。想留下来的东西要保存，载入或新建别的工程之前也先保存。
-- 写不进去时屏幕显示 AUTOSAVE FAILED: FN+S TO CARD。特别长的作品（超过约 12 KB）不带没在播放的 Pattern，屏幕显示 TOO LONG TO AUTOSAVE: FN+S TO CARD。两种情况都请用 <Key k="FN+S" /> 存到卡上。
-- 还没保存的录音放在卡上（`Session/take-<轨道>.wav`）；重启后它会回来，屏幕显示 UNSAVED TAKE IS BACK。用到的采样所在的卡没插着时，插卡后自动载入。
+- 按键停下来就写：最后一次按键 1.5 秒后、没有按住的键，播放中也一样。一直在按键（或者有采样正从卡上播放）时，最多等 60 秒。写卡在后台进行，音乐和屏幕都不用等它；没改变任何东西的按键不会触发写入。切换到别的应用时马上写。
+- 它不是工程：只有 SAVE 才会写出有名字的工程。想留下来的东西要保存，载入或新建别的工程之前也先保存。
+- 写不进去时屏幕显示 AUTOSAVE FAILED: SD CARD ERROR（卡被拔掉时是 NO SD CARD），之后会一直重试；卡一恢复就把改动写进去。
+- 还没保存的录音放在卡上（`Session/take-<轨道>.wav`）；重启后它会回来，屏幕显示 UNSAVED TAKE IS BACK。用到的采样不在卡上时，卡回来后自动载入。
 - 如果连续三次没能正常启动，下一次启动会跳过一次工作状态。
+- 不保留的：无感录制的 take，以及是不是正在播放。没有卡时什么都不保留（见 [没插卡或卡坏了](#storage-card)）。
 
 :::tip
 
-设置（SELECT、音量、灯、屏幕）改动后约 1 秒自动写到 SD 卡，不用手动保存。
+设置（SELECT、音量、灯、屏幕、日志）改动后约 1 秒自动写到 SD 卡，不用手动保存。
 
 :::
 
@@ -58,43 +59,59 @@ sidebar_position: 13
 
 ## SD 卡上的目录 {#storage-layout}
 
+所有东西都在卡根目录的一个文件夹 `CardenzaSynth` 里：
+
 ```text
-<SD 卡>/Cardenza/
-  System/settings.cfg        设备设置（音量、灯、屏幕）
-  Shared/Samples/            所有应用共用的采样
-  Apps/Cardenza/Synth/
-    settings.cfg             本应用的偏好（SELECT）
-    Projects/                工程（.ccproj）
-    Presets/<音源>/           自己保存的音色
-    Session/                 还没保存的录音
+<SD 卡>/CardenzaSynth/
+  Settings/system.cfg      设备设置（音量、灯、屏幕、日志）
+  Settings/synth.cfg       音乐工作站的偏好（SELECT）
+  Projects/                工程（.ccproj）
+  Presets/<音源>/           自己保存的音色
+  Samples/                 采样，所有应用共用
+  Session/                 工作状态、还没保存的录音
+  Logs/                    日志（log.txt）
+  Apps/<作者>/<名字>/       别的应用，各有自己的文件夹
 ```
 
-所有应用都遵守同一套存储协议：每个应用只写自己的目录和共用采样目录。旧版本固件的目录（`CardenzaSynth/Project`、`Preset`、`Sample`）开机时自动搬到新位置。0.1.0 版的工程和采样（`CardenzaSynth/Projects`、`CardenzaSynth/Samples`）留在原处，照样出现在 FILES 和采样列表里；保存这样的工程会在 `Projects/` 里写一份。
+- 这就是 0.1.0 版的目录：它的工程、音色和采样原地使用。
+- 别的固件的目录（开发版的 `Cardenza/` 文件夹，0.1.0 之前的 `CardenzaSynth/Project`、`Preset`、`Sample`）不读也不改。要用里面的文件，在电脑上把它们复制到上面的文件夹里：文件格式是一样的。
+- 每个应用只写自己的文件夹和共用的 `Samples/`。
 
 <Keywords k="目录, 文件夹, 路径, sd 卡结构, folder, directory, path, sd card layout, where are my files" />
 
 ## 设置文件 {#storage-settings}
 
-`settings.cfg` 是纯文本，一行一个 `key=value`，在电脑上也能看、能改：
+`Settings/` 里的 `.cfg` 是纯文本，一行一个 `key=value`，在电脑上也能看、能改：
 
 ```text
-# Cardenza settings: Cardenza/Synth (storage protocol 1)
+# Cardenza settings: Cardenza/Synth (storage protocol 2)
 keys.select=1
 ```
 
-读的时候很宽容：坏掉的行会跳过，不认识的键原样保留（新旧固件可以共用一张卡）。旧固件存在这里的键盘设置只在开机时读一次，不再写入：键盘现在属于工程。
+读的时候很宽容：坏掉的行会跳过，不认识的键原样保留（新旧固件可以共用一张卡）。设备写入改动时会先重新读一遍文件，只改在设备上改过的项，所以在电脑上改的内容会留下。
 
 <Keywords k="设置文件, 配置, 文本, settings file, config, cfg" />
+
+## 日志 {#storage-log}
+
+<Scene name="SETUP" /> <Page name="SYSTEM" /> 的 **LOG** 打开（默认）并且插着卡时，鸣片把它报告的内容写进 `CardenzaSynth/Logs/log.txt`：每次开机和固件版本、载入和保存、出错，以及崩溃时的报告。文件超过 512 KB 后改名为 `log.1.txt`，重新开始一个。
+
+出了问题（死机、声音停了、保存失败），把这两个文件连同简单的说明发给我们：里面记着发生了什么。LOG 关闭时什么都不写。
+
+<Keywords k="日志, 崩溃, 死机, 报错, 问题反馈, log, logs, crash, bug, bug report, error report, log.txt, debug" />
 
 ## 没插卡或卡坏了 {#storage-card}
 
 <Shot name="setup-system">
-  <Mark at="8,66,150,10">SD 卡：READY / NOT FOUND</Mark>
-  <Mark at="cells:1,1-1,3">音量 · 按键灯 · 屏幕</Mark>
+  <Mark at="8,82,150,11">SD 卡：READY / NOT FOUND</Mark>
+  <Mark at="cells:1,1-1,4">音量 · 按键灯 · 屏幕 · 日志</Mark>
   <Caption>SETUP SYSTEM：SD 卡状态。</Caption>
 </Shot>
 
-- 没有 SD 卡时，设备设置和应用设置先存在机器内部，插卡后（每 10 秒重试一次）自动写回卡上。工作状态本来就在内部存储里（见 [工作状态会被保留](#project-session)）。
-- 工程、音色和采样需要 SD 卡；没有卡时保存会提示 SD CARD ERROR。
+鸣片只在开机时找一次卡。
 
-<Keywords k="没有卡, 插卡, 存储卡, 读不到卡, 存不了, no sd card, card missing, storage error, cannot save" />
+- **开机时没有卡**：开机动画之后弹出提示 NO SD CARD、NOTHING WILL BE SAVED、INSERT A CARD AND RESTART TO SAVE（<Key k="OK" /> 或 <Key k="ESC" /> 关掉）。这一次运行里设备完全不碰卡，之后再插进去也一样：可以弹、可以改设置，但断电后什么都不会留下；保存提示 NO SD CARD，FILES 是空的，教程也不会开始。插上卡，重新开机。
+- **用着用着卡没反应了**：失败的那次操作提示 SD CARD ERROR，设备会重新找卡；卡恢复后，设置和工作状态会写进去。
+- SETUP SYSTEM 上显示卡的状态：SD CARD READY 或 NOT FOUND。
+
+<Keywords k="没有卡, 插卡, 存储卡, 读不到卡, 存不了, 什么都不会保存, no sd card, card missing, storage error, cannot save, nothing will be saved" />

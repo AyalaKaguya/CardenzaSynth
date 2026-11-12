@@ -81,6 +81,22 @@ bool InScale(const KeyboardSettings& settings, int note)
   return ((mask >> degree) & 1u) != 0;
 }
 
+int SnapToScale(const KeyboardSettings& settings, int note)
+{
+  if (settings.layout != KeyboardLayout::Scale && settings.lock == ScaleLock::Snap)
+    while (note > 0 && !InScale(settings, note)) --note;
+  return note;
+}
+
+int NextKeyboardNote(const KeyboardSettings& settings, int note, int direction)
+{
+  const bool scaleOnly = settings.layout == KeyboardLayout::Scale || settings.lock != ScaleLock::Off;
+  const int step = direction < 0 ? -1 : 1;
+  do note += step;
+  while (scaleOnly && note >= 0 && note <= 127 && !InScale(settings, note));
+  return note;
+}
+
 std::size_t PadNotes(const KeyboardSettings& settings, const ChordSettings& shape, synth::SynthEngineKind kind, int note,
                      std::array<std::uint8_t, kMaxPadNotes>& notes)
 {
@@ -91,11 +107,8 @@ std::size_t PadNotes(const KeyboardSettings& settings, const ChordSettings& shap
     return 1;
   }
   // The scale lock only acts where keys outside the scale exist.
-  if (settings.layout != KeyboardLayout::Scale && settings.lock != ScaleLock::Off && !InScale(settings, note))
-  {
-    if (settings.lock == ScaleLock::Mute) return 0;
-    while (note > 0 && !InScale(settings, note)) --note;
-  }
+  if (settings.layout != KeyboardLayout::Scale && settings.lock == ScaleLock::Mute && !InScale(settings, note)) return 0;
+  note = SnapToScale(settings, note);
   std::array<int, kMaxPadNotes> chord{};
   std::size_t count = 0;
   auto add = [&](int interval) { if (count < chord.size()) chord[count++] = note + interval; };

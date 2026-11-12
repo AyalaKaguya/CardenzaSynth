@@ -10,6 +10,7 @@
 #include "Applications/Synth/UI/Groove/GrooveTypes.h"
 #include "Library/Synth/Audio/SynthFx.h"
 #include "Library/Synth/Core/ISynthEngine.h"
+#include "OS/Storage/DeviceSettings.h"
 
 namespace groove {
 
@@ -86,6 +87,9 @@ public:
   // Projects.
   virtual std::vector<std::string> ListProjects() const = 0;
   virtual SaveResult SaveProject(const std::string& name, bool overwrite, const ProjectUiSettings& settings, std::string& message) = 0;
+  // Renames a saved project on the card (its file only: the project that is open keeps its state).
+  // Exists: the new name is another project's; Failed: message says why.
+  virtual SaveResult RenameProject(const std::string& from, const std::string& to, std::string& message) = 0;
   virtual bool LoadProject(const std::string& name, ProjectUiSettings& settings, std::string& message) = 0;
   virtual bool NewProject(ProjectUiSettings& settings, std::string& message) = 0;
 
@@ -97,6 +101,9 @@ public:
   // The console log on the card (a device setting, OS/System/Log.h).
   virtual void SetLogging(bool on) = 0;
   virtual bool Logging() const = 0;
+  // The screen's palette (a device setting, sys.theme); the renderer applies it every frame.
+  virtual void SetScreenTheme(os::storage::Theme theme) = 0;
+  virtual os::storage::Theme ScreenTheme() const = 0;
   virtual SystemInfo QuerySystem() const = 0;
 };
 

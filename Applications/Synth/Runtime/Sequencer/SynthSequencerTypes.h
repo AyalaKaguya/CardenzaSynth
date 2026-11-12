@@ -14,7 +14,57 @@ enum class SequencerEditLane : std::uint8_t {
   Length,
   Velocity,
   Micro,
+  Hits,
 };
+
+// HITS: a step's note fires 1..kSequencerMaxHits times inside its step (the drummer's ratchet), evenly
+// and on whole pulses: 2, 3 or 4 hits are 12, 8 or 6 pulses apart (32nds, sixteenth triplets, 64ths).
+// The first hit is the note itself (its TIME and swing included), the others follow it. Each hit
+// sounds for the note's length, up to the next hit; the last one holds to the end of a note longer
+// than its hits (SequencerHitGatePulses), so a long note stutters in its first step and then rings.
+inline constexpr std::uint8_t kSequencerMaxHits = 4;
+
+constexpr std::uint8_t ClampSequencerHits(int hits)
+{
+  return static_cast<std::uint8_t>(hits < 1 ? 1 : (hits > kSequencerMaxHits ? kSequencerMaxHits : hits));
+}
+
+// Pulses from one hit to the next.
+constexpr std::uint16_t SequencerHitSpacingPulses(std::uint8_t hits)
+{
+  return static_cast<std::uint16_t>(kSequencerPulsesPerStep / ClampSequencerHits(hits));
+}
+
+// How long hit `hit` (0-based) of a note of `lengthPulses` sounds.
+constexpr std::uint16_t SequencerHitGatePulses(std::uint8_t hits, std::uint8_t hit, std::uint16_t lengthPulses)
+{
+  const std::uint16_t spacing = SequencerHitSpacingPulses(hits);
+  const std::uint16_t gate = lengthPulses < spacing ? lengthPulses : spacing;
+  const std::uint16_t before = static_cast<std::uint16_t>(spacing * (ClampSequencerHits(hits) - 1));
+  const bool last = hit + 1 >= ClampSequencerHits(hits);
+  const std::uint16_t rest = lengthPulses > before ? static_cast<std::uint16_t>(lengthPulses - before) : 0;
+  const std::uint16_t length = last && rest > gate ? rest : gate;
+  return length < 1 ? 1 : length;
+}
+
+// When the last hit of a note ends, from the note's start: its length, or later for short hits.
+constexpr std::uint16_t SequencerNoteSoundingPulses(std::uint8_t hits, std::uint16_t lengthPulses)
+{
+  const std::uint8_t count = ClampSequencerHits(hits);
+  return static_cast<std::uint16_t>(SequencerHitSpacingPulses(count) * (count - 1) +
+                                    SequencerHitGatePulses(count, static_cast<std::uint8_t>(count - 1), lengthPulses));
+}
+
+constexpr bool SequencerHitsOnWholePulses()
+{
+  for (int hits = 1; hits <= kSequencerMaxHits; ++hits)
+    if (kSequencerPulsesPerStep % hits != 0) return false;
+  return true;
+}
+static_assert(SequencerHitsOnWholePulses(), "Every count of hits must land its hits on whole sequencer pulses.");
+static_assert(SequencerHitGatePulses(1, 0, 60) == 60 && SequencerHitGatePulses(2, 0, 24) == 12 && SequencerHitGatePulses(2, 1, 24) == 12 &&
+              SequencerHitGatePulses(4, 3, 4) == 4 && SequencerHitGatePulses(3, 2, 72) == 56,
+              "A hit sounds for the note's length, up to the next hit; the last one to the end of a longer note.");
 
 // Song (arrangement) mode: an ordered list of rows, each naming one pattern per track and a
 // length in bars. One bar is 16 sixteenth steps of the global clock, whatever a track's own
@@ -82,6 +132,8 @@ inline const char* SequencerEditLaneLabel(SequencerEditLane lane)
       return "VEL";
     case SequencerEditLane::Micro:
       return "TIME";
+    case SequencerEditLane::Hits:
+      return "HITS";
     default:
       return "SEQ";
   }
@@ -93,11 +145,12 @@ struct SequencerStepUiState {
   std::size_t noteCount = 0;
   bool held = false;
   bool playing = false;
-  bool scoped = false;
   std::uint32_t contentFingerprint = 0;
   float editFlash = 0.0f;
   // Highest velocity among the step's active notes; 0 when the step is empty.
   std::uint8_t velocity = 0;
+  // Most HITS among the step's active notes (1 for a plain or empty step).
+  std::uint8_t hits = 1;
 };
 
 struct SequencerTrackUiState {
@@ -126,7 +179,6 @@ struct SequencerUiState {
   std::size_t heldStepCount = 0;
   std::size_t primaryHeldStep = 0;
   std::size_t noteCount = 0;
-  int scopedNote = -1;
   std::string noteNames;
   std::size_t populatedStepCount = 0;
   std::array<bool, kSequencerMaxPatternCount> patternHasEvents{};
@@ -156,7 +208,6 @@ struct SequencerUiState {
   std::size_t activePattern = 0;
   float patternProgress = 0.0f;
   SequencerEditLane editLane = SequencerEditLane::Note;
-  std::string scopeLabel = "ALL";
   std::string valueLabel;
   std::array<bool, kKeyboardMatrixRows> editLanePressed{};
   std::size_t editValueCount = 0;

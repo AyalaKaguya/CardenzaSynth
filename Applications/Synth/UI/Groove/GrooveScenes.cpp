@@ -2,7 +2,9 @@
 #include "OS/Storage/DeviceSettings.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace groove {
@@ -170,6 +172,12 @@ bool Controller::SettingValue(const char* id, synth::SynthParameterInfo& info, s
     choice(host_.Logging() ? 1 : 0, 2, os::storage::kDefaultLogEnabled ? 1 : 0, host_.Logging() ? "ON" : "OFF");
     info.kind = synth::SynthParameterKind::Toggle;
   }
+  else if (Is(id, "sys.theme"))
+  {
+    static constexpr std::array<const char*, os::storage::kThemeCount> kThemeNames{{"DARK", "LIGHT", "RETRO"}};
+    const auto theme = std::min(static_cast<std::size_t>(host_.ScreenTheme()), os::storage::kThemeCount - 1);
+    choice(static_cast<int>(theme), static_cast<int>(os::storage::kThemeCount), static_cast<int>(os::storage::kDefaultTheme), kThemeNames[theme]);
+  }
   else return false;
   return true;
 }
@@ -215,6 +223,7 @@ void Controller::AdjustSetting(const char* id, int delta)
   else if (Is(id, "sys.led")) host_.SetLedBrightness(static_cast<std::uint8_t>(value));
   else if (Is(id, "sys.screen")) host_.SetBacklight(static_cast<std::uint8_t>(value));
   else if (Is(id, "sys.log")) host_.SetLogging(value != 0);
+  else if (Is(id, "sys.theme")) host_.SetScreenTheme(static_cast<os::storage::Theme>(value));
   // The key range moves under held pads: let them go before they map to other notes.
   if (Is(id, "keys.layout") || Is(id, "keys.octave")) ReleaseAllPads();
   // Only project data makes the project unsaved: the keyboard, the tracks' chords and arpeggiators,
@@ -459,6 +468,50 @@ void Controller::SaveProjectNamed(const std::string& name, bool overwrite)
     case SaveResult::Failed:
     default:
       ShowToast(message.empty() ? "SAVE FAILED" : message, ToastKind::Error);
+      break;
+  }
+}
+
+void Controller::RenameProject()
+{
+  std::string name = state_.projectName;
+  if (CurrentPage() == kSetupFiles)
+  {
+    if (state_.projects.empty()) return;
+    name = state_.projects[std::min(state_.fileCursor, state_.projects.size() - 1)];
+  }
+  if (name.empty())
+  {
+    // Never saved: renaming it is naming it, which saves it.
+    OpenTextEntry(TextPurpose::ProjectSaveAs, "NAME PROJECT", "SONG", 24);
+    return;
+  }
+  OpenTextEntry(TextPurpose::ProjectRename, "RENAME PROJECT", name, 24);
+  Top()->payload = name;
+}
+
+void Controller::RenameProjectNamed(const std::string& from, const std::string& to)
+{
+  if (to == from) return;
+  std::string message;
+  switch (host_.RenameProject(from, to, message))
+  {
+    case SaveResult::Ok:
+      // The open project keeps its state (saved or not) under the new name.
+      if (state_.projectName == from) state_.projectName = to;
+      RefreshProjects();
+      // On FILES the cursor stays on the project just renamed.
+      if (CurrentPage() == kSetupFiles)
+        if (const auto at = std::find(state_.projects.begin(), state_.projects.end(), to); at != state_.projects.end())
+          state_.fileCursor = static_cast<std::size_t>(at - state_.projects.begin());
+      ShowToast("RENAMED " + to, ToastKind::Ok);
+      break;
+    case SaveResult::Exists:
+      ShowToast(to + " IS TAKEN", ToastKind::Error);
+      break;
+    case SaveResult::Failed:
+    default:
+      ShowToast(message.empty() ? "RENAME FAILED" : message, ToastKind::Error);
       break;
   }
 }
@@ -811,16 +864,169 @@ void Controller::RunSlotAction(SlotAction action)
 // ---------------------------------------------------------------------------------------------
 // SEQ
 
-// A pad while steps are selected (held or tapped): its notes (its chord, as one) go into them, or come
-// out: a step that holds any of them loses them all and gains none. A new note gets `velocity` (a drum
-// pad's row), or with 0 the track's new-note velocity.
-bool Controller::PadForSequence(const std::uint8_t* notes, std::size_t count, bool pressed, std::uint8_t velocity)
+// A pad while steps are selected (held or tapped) edits them (PadEdit), its notes (its chord) as one.
+// When no selected step holds any of them they go in at once, a new note at `velocity` (a drum pad's
+// row; 0: the track's new-note velocity). A lit pad (a selected step holds any of them) waits for its
+// release: let go untouched, a step that holds any of them loses them all and gains none (and one that
+// holds none gains them all); held, ADD / SUB edit them alone (AdjustHeldPadNotes). False when no step
+// is selected.
+bool Controller::PadForSequence(std::size_t pad, int key, const std::uint8_t* notes, std::size_t count, std::uint8_t velocity)
 {
-  if (!pressed || count == 0) return false;
+  state_.padEdit[pad] = PadEdit{};
+  if (count == 0) return false;
   auto& sequencer = host_.Sequencer();
-  if (!sequencer.BuildUiState(state_.track).hasHeldSteps) return false;
-  if (sequencer.ToggleNotesOnSelectedSteps(notes, count, velocity)) MarkDirty();
+  if (!sequencer.HasHeldSteps()) return false;
+  PadEdit& edit = state_.padEdit[pad];
+  edit.active = true;
+  edit.root = static_cast<std::uint8_t>(DrumTrack() ? key : SnapToScale(state_.keyboard, key));
+  edit.velocity = velocity;
+  edit.count = static_cast<std::uint8_t>(std::min(count, edit.notes.size()));
+  std::copy(notes, notes + edit.count, edit.notes.begin());
+  edit.removeOnRelease = sequencer.SelectedStepsHoldAny(notes, count);
+  if (!edit.removeOnRelease && sequencer.ToggleNotesOnSelectedSteps(notes, count, velocity)) MarkDirty();
   return true;
+}
+
+bool Controller::PadEditHeld() const
+{
+  if (state_.scene != Scene::Sequence || CurrentPage() != 0 || TopModal() != nullptr) return false;
+  for (std::size_t pad = 0; pad < state_.padEdit.size(); ++pad)
+    if (state_.padEdit[pad].active && state_.padNote[pad] != kNoNote && state_.padTrack[pad] == state_.track) return true;
+  return false;
+}
+
+void Controller::UsePadEdits()
+{
+  for (PadEdit& edit : state_.padEdit) edit.used = edit.used || edit.active;
+}
+
+// ADD / SUB with lit pads held on the note page (PadEdit): the current edit lane (OK cycles it), for
+// their notes only, on the selected steps that hold them. One rule for every lane: NOTE moves them
+// (MovePadNotes; on a drum track only from drum to drum), and every other lane goes to the sequencer's
+// lane edit (AdjustNotesOnSelectedSteps), the same one ADD / SUB use on whole steps; a new lane needs
+// nothing here.
+bool Controller::AdjustHeldPadNotes(int delta, bool coarse)
+{
+  if (delta == 0 || !PadEditHeld()) return false;
+  std::array<std::size_t, kRows * kPadColumns> pads{};
+  std::size_t padCount = 0;
+  for (std::size_t pad = 0; pad < state_.padEdit.size(); ++pad)
+    if (state_.padEdit[pad].active && state_.padNote[pad] != kNoNote && state_.padTrack[pad] == state_.track) pads[padCount++] = pad;
+  // The keys belong to the pads until they let go (also while ADD / SUB repeat), and the pads keep
+  // their notes when they do.
+  state_.repeat.padMove = true;
+  UsePadEdits();
+  auto& sequencer = host_.Sequencer();
+  const synth::SequencerEditLane lane = sequencer.EditLane();
+  const auto name = [&](std::uint8_t note) { return DrumTrack() ? std::string(DrumName(note)) : NoteName(note); };
+  if (lane == synth::SequencerEditLane::Note)
+  {
+    MovePadNotes(pads.data(), padCount, delta, coarse);
+    return true;
+  }
+  // The held pads' notes together, each once.
+  std::array<std::uint8_t, kRows * kPadColumns * kMaxPadNotes> notes{};
+  std::size_t count = 0;
+  std::string names;
+  for (std::size_t order = 0; order < padCount; ++order)
+  {
+    const PadEdit& edit = state_.padEdit[pads[order]];
+    for (std::size_t voice = 0; voice < edit.count; ++voice)
+    {
+      if (std::find(notes.begin(), notes.begin() + static_cast<std::ptrdiff_t>(count), edit.notes[voice]) != notes.begin() + static_cast<std::ptrdiff_t>(count)) continue;
+      notes[count++] = edit.notes[voice];
+      names += " " + name(edit.notes[voice]);
+    }
+  }
+  if (sequencer.AdjustNotesOnSelectedSteps(notes.data(), count, delta, coarse)) MarkDirty();
+  const std::string value = sequencer.NotesLaneValue(notes.data(), count);
+  ShowHud(synth::SequencerEditLaneLabel(lane) + names, value.empty() ? "--" : value);
+  return true;
+}
+
+// The NOTE lane for held pads: each one's notes move a key of the keyboard at a time
+// (NextKeyboardNote: a semitone, the next scale note on SCALE or with the scale lock on; FN: an
+// octave), past notes those steps already hold. A chord pad's notes become the next key's chord. On a
+// drum track a hit moves to the next drum of the kit in pad order (kDrumNotes; FN the same), past the
+// drums those steps already hold, and never off the kit. Stopped, the pad sounds where its notes went;
+// it keeps moving the same notes while it is down.
+void Controller::MovePadNotes(const std::size_t* heldPads, std::size_t padCount, int delta, bool coarse)
+{
+  std::array<std::size_t, kRows * kPadColumns> pads{};
+  padCount = std::min(padCount, pads.size());
+  std::copy(heldPads, heldPads + padCount, pads.begin());
+  const int direction = delta > 0 ? 1 : -1;
+  const bool drums = DrumTrack();
+  // Where a note is on the way: its pitch, or a drum's pad (-1: not a drum of the kit).
+  const auto rank = [&](int note) {
+    if (!drums) return note;
+    for (std::size_t lane = 0; lane < kDrumNotes.size(); ++lane)
+      if (kDrumNotes[lane] == note) return static_cast<int>(lane);
+    return -1;
+  };
+  // Up from the highest pad, down from the lowest: held pads never land on each other.
+  std::sort(pads.begin(), pads.begin() + static_cast<std::ptrdiff_t>(padCount), [&](std::size_t left, std::size_t right) {
+    const int a = rank(state_.padEdit[left].root), b = rank(state_.padEdit[right].root);
+    return direction > 0 ? a > b : a < b;
+  });
+  auto& sequencer = host_.Sequencer();
+  const auto kind = ActiveKind();
+  std::string names;
+  for (std::size_t order = 0; order < padCount; ++order)
+  {
+    const std::size_t pad = pads[order];
+    PadEdit& edit = state_.padEdit[pad];
+    std::array<bool, 128> taken{};
+    if (sequencer.SelectedStepsHoldAny(edit.notes.data(), edit.count, &taken))
+    {
+      int root = edit.root;
+      std::array<std::uint8_t, kMaxPadNotes> moved = edit.notes;
+      for (int keys = 0; keys < std::abs(delta); ++keys)
+      {
+        // The next key whose notes land on none the steps already hold.
+        int next = root;
+        std::array<std::uint8_t, kMaxPadNotes> notes{};
+        bool found = false;
+        while (!found)
+        {
+          if (drums)
+          {
+            const int lane = rank(next) + direction;
+            if (rank(next) < 0 || lane < 0 || lane >= static_cast<int>(kDrumNotes.size())) break;
+            next = kDrumNotes[static_cast<std::size_t>(lane)];
+          }
+          else next = coarse ? next + 12 * direction : NextKeyboardNote(state_.keyboard, next, direction);
+          if (next < 0 || next > 127) break;
+          if (PadNotes(state_.keyboard, state_.chords[state_.track], kind, next, notes) != edit.count) continue;
+          found = std::none_of(notes.begin(), notes.begin() + edit.count, [&](std::uint8_t note) { return taken[note]; });
+        }
+        if (!found) break;
+        root = next;
+        moved = notes;
+      }
+      if (root != edit.root && sequencer.MoveNotesOnSelectedSteps(edit.notes.data(), moved.data(), edit.count))
+      {
+        MarkDirty();
+        // Stopped, the pad sounds (and the screen shows it held) where its notes went.
+        if (state_.padChordCount[pad] != 0)
+        {
+          SoundPad(pad, false);
+          std::copy(moved.begin(), moved.begin() + edit.count, state_.padChord[pad].begin());
+          state_.padChordCount[pad] = edit.count;
+          SoundPad(pad, true, false);
+        }
+        edit.root = static_cast<std::uint8_t>(root);
+        edit.notes = moved;
+        state_.padNote[pad] = edit.root;
+        // The STEP view's GRID shows the row the note went to.
+        if (drums) state_.drumLane[state_.track] = static_cast<std::uint8_t>(rank(root));
+        else state_.noteLane[state_.track] = edit.root;
+      }
+    }
+    for (std::size_t voice = 0; voice < edit.count; ++voice)
+      names += (names.empty() ? "" : " ") + (drums ? std::string(DrumName(edit.notes[voice])) : NoteName(edit.notes[voice]));
+  }
+  ShowHud(drums ? "DRUM" : "NOTE", names);
 }
 
 // The note page's step keys, as MatrixOS's sequencer has them: a step is selected while its key is
@@ -1008,8 +1214,12 @@ void Controller::SequenceAdjust(int delta, bool coarse)
   switch (CurrentPage())
   {
     case 0:
-      // Selected steps: the value of the edit lane (OK chooses it). Nothing selected: ADD / SUB flip
-      // the GRID's page, FN + ADD / SUB go to the next / previous pattern.
+      // Selected steps: the value of the edit lane (OK chooses it), only for the notes of a lit pad
+      // held. Nothing selected: ADD / SUB flip the GRID's page, FN + ADD / SUB go to the next /
+      // previous pattern.
+      if (AdjustHeldPadNotes(delta, coarse)) return;
+      // The pad let go while ADD / SUB repeat: they stay its keys until they let go too.
+      if (state_.repeat.down && state_.repeat.padMove) return;
       if (ui.hasHeldSteps)
       {
         // On a drum track the pads pick the drum: the NOTE lane does not move hits to pitches that
@@ -1664,7 +1874,7 @@ MenuItems Controller::Menu() const
       put(4, MenuAction::Duplicate, "DUP", "PATTERN", "D", ui.tracks[state_.track].patternCount < synth::kSequencerMaxPatternCount);
       put(5, MenuAction::View, "VIEW", PageTab(Scene::Sequence, 0), nullptr, true, View() == SeqView::Step);
       put(6, MenuAction::RecordPanel, "RECORD", "TAKES");
-      put(7, MenuAction::Scope, "SCOPE", steps ? ui.scopeLabel : "", "OK", steps);
+      // Cell 7 is free. (One note of a chord: hold its pad, AdjustHeldPadNotes.)
       // The pages of a long pattern, and how long it is.
       const std::string pages = std::to_string(ui.viewPage + 1) + "/" + std::to_string(ui.viewPageCount);
       const std::string length = std::to_string(ui.tracks[state_.track].stepCount);
@@ -1713,6 +1923,9 @@ MenuItems Controller::Menu() const
         put(0, MenuAction::NewProject, "NEW", "PROJECT");
         put(1, MenuAction::LoadProject, "LOAD", "PROJECT");
         put(2, MenuAction::SaveProjectAs, "SAVE AS", "PROJECT");
+        // FILES renames the project under the cursor, PROJECT the open one (a new one gets its first name).
+        put(3, MenuAction::RenameProject, "RENAME", page == kSetupFiles ? "SELECTED" : "PROJECT", nullptr,
+            page != kSetupFiles || !state_.projects.empty());
       }
       else if (const InstrumentPage* settings = SettingsPageShown())
       {
@@ -1781,7 +1994,6 @@ void Controller::RunMenuAction(const MenuItem& item)
     case MenuAction::SampleRecord: RunSlotAction(SlotAction::SampleRecord); break;
     case MenuAction::SamplePreview: RunSlotAction(SlotAction::SamplePreview); break;
     case MenuAction::Default:
-    case MenuAction::Scope:
     case MenuAction::Capture:
     case MenuAction::SongMode: FnEnter(); break;
     case MenuAction::Copy: Copy(); break;
@@ -1818,6 +2030,7 @@ void Controller::RunMenuAction(const MenuItem& item)
       SetPage(kSetupFiles);
       break;
     case MenuAction::SaveProjectAs: SaveProject(true); break;
+    case MenuAction::RenameProject: RenameProject(); break;
     case MenuAction::None:
     default: break;
   }
