@@ -48,7 +48,7 @@ void ClearCorners(Gfx& g)
 
 void MapTile(Gfx& g, const Rect& rect, std::string_view label, std::string_view detail, bool selected, Color accent, std::uint32_t now)
 {
-  render::DrawMapTile(g, rect, selected, true, accent, now);
+  render::DrawMapTile(g, rect, selected, true, accent, now, kInk, true);
   g.TextFit(rect.x + 8, rect.y + 10, rect.width - 16, label, selected ? kBlack : kInk,
             rect.width > 120 ? Font::Large : Font::Small);
   g.TextFit(rect.x + 8, rect.y + rect.height - 23, rect.width - 16, detail, selected ? kBlack : kDim, Font::Small);
@@ -100,7 +100,7 @@ void View::CancelPerformance(Controller& controller, std::uint32_t nowMs, bool c
   for (auto& pointer : performancePointers_)
   {
     if (!pointer.active) continue;
-    if (pointer.note >= 0) (void)controller.Dispatch({Kind::PerformanceUp, pointer.id}, nowMs);
+    if (pointer.note >= 0) (void)controller.Dispatch({Kind::PerformanceCancel, pointer.id}, nowMs);
     pointer.note = -1;
     pointer.cancelled = true;
     if (clear) pointer.active = false;
@@ -140,6 +140,7 @@ void View::Cell(Gfx& g, const Rect& rect, std::string_view label, std::string_vi
   metrics.barHeight = 3;
   metrics.labelFont = Font::Small;
   metrics.valueFont = Font::Large;
+  metrics.dottedOutline = true;
   widgets::ParamCell(g, rect, label, value, fraction, focused, !available, metrics);
   (void)accent;
 }
@@ -154,6 +155,7 @@ void View::Action(Gfx& g, const Rect& rect, std::string_view label, std::string_
   metrics.labelY = 6;
   metrics.detailBottom = 21;
   metrics.focusBandHeight = 21;
+  metrics.strongOutline = true;
   const bool pressed = pointerDown_ && !pointerCancelled_ && !pressed_.side &&
       pressed_.rect.x == rect.x && pressed_.rect.y == rect.y && pressed_.rect.width == rect.width;
   widgets::ActionCell(g, rect, label, detail, focused, pressed, available, accent, metrics);
@@ -173,6 +175,9 @@ void View::SetLayer(Controller& controller, Layer layer, std::uint32_t nowMs)
   layer_ = layer;
   if (layer != Layer::None)
   {
+    if (layer == Layer::Scenes)
+      for (std::size_t scene = 0; scene < kSceneCount; ++scene)
+        sceneListScroll_[scene] = controller.State().page[scene] > 2 ? controller.State().page[scene] - 2 : 0;
     closingLayer_ = Layer::None;
     layerOpenedAt_ = nowMs;
     controller.NotifyNativeOverlay(static_cast<std::size_t>(layer) - 1, true, nowMs);
@@ -297,6 +302,8 @@ void View::Sides(Gfx& g, const Controller& controller, Animator& animator)
     case AdjustMeaning::None: add = Glyph::None; sub = Glyph::None; break;
     default: break;
   }
+  const bool navigateMap = layer_ == Layer::Tracks || layer_ == Layer::Pages;
+  if (navigateMap) { add = Glyph::Right; sub = Glyph::Left; }
   const bool recArmed = controller.HostView().Sequencer().RecordArmed();
   const std::array<Glyph, 4> rightGlyphs{{add, sub, Glyph::Enter, recArmed && !playing ? Glyph::Rec : Glyph::Play}};
   for (std::size_t row = 0; row < 4; ++row)
@@ -323,7 +330,7 @@ void View::Sides(Gfx& g, const Controller& controller, Animator& animator)
       else if (row == 2 && modalKind == ModalKind::Menu) AddHit(l, {Kind::Back});
     }
 
-    const bool rightUsable = !saving && (layer_ == Layer::None || row == 3);
+    const bool rightUsable = !saving && (layer_ == Layer::None || row == 3 || (navigateMap && row < 2));
     const bool down = pointerDown_ && !pointerCancelled_ && pressed_.side && pressed_.command.index == static_cast<int>(kRight[row]);
     const Color rightColor = !rightUsable ? kShade : row == 3 ? recArmed ? kRec : playing ? kPlay : kDim : kDim;
     const Rect rightCap{layout::kWidth - layout::kEdgePadding - 10, r.y + 3, 10, 114};
@@ -401,15 +408,34 @@ void View::Layers(Gfx& g, const Controller& controller, Animator& animator, Laye
       g.HLine(rect.x + padding, rect.y + headingHeight - 6, rect.width - padding * 2, secondary);
       AddHit(Rect{rect.x, rect.y, rect.width, headingHeight}, {Kind::SelectScene, static_cast<int>(i)});
       const auto count = controller.PageCount(scene);
-      for (std::size_t page = 0; page < count; ++page)
+      const auto capacity = static_cast<std::size_t>((rect.height - headingHeight - padding) / rowHeight);
+      const bool scrolling = count > capacity;
+      const auto visible = scrolling ? capacity - 2 : std::min(count, capacity);
+      auto& first = sceneListScroll_[i];
+      first = scrolling ? std::min(first, count - visible) : 0;
+      if (scrolling)
       {
-        const Rect item{rect.x + 3, rect.y + headingHeight + static_cast<int>(page) * rowHeight, rect.width - 6, rowHeight};
-        if (item.y + item.height > rect.y + rect.height - padding) break;
+        const Rect up{rect.x + 3, rect.y + headingHeight, rect.width - 6, rowHeight};
+        const Rect down{up.x, up.y + static_cast<int>(visible + 1) * rowHeight, up.width, rowHeight};
+        g.TextAligned(up, "UP", first > 0 ? ink : secondary, Font::Small, Align::Center);
+        g.TextAligned(down, "DOWN", first + visible < count ? ink : secondary, Font::Small, Align::Center);
+        widgets::DottedFrame(g, up, first > 0 ? secondary : current ? kBlack : kShade);
+        widgets::DottedFrame(g, down, first + visible < count ? secondary : current ? kBlack : kShade);
+        if (first > 0) AddHit(up, {Kind::SceneListScroll, static_cast<int>(i), -1});
+        if (first + visible < count) AddHit(down, {Kind::SceneListScroll, static_cast<int>(i), 1});
+      }
+      for (std::size_t row = 0; row < visible; ++row)
+      {
+        const auto page = first + row;
+        const Rect item{rect.x + 3, rect.y + headingHeight + static_cast<int>(row + (scrolling ? 1 : 0)) * rowHeight,
+                        rect.width - 6, rowHeight};
         const bool selected = controller.State().page[i] == page;
         const auto text = controller.PageTab(scene, page);
         const Font font = Gfx::Measure(text, Font::Small) <= item.width - 6 ? Font::Small : Font::Micro;
         if (selected) g.Fill(Rect{item.x, item.y + 4, item.width, rowHeight - 8}, current ? kBlack : kDim);
         const Color textColor = selected ? (current ? kInk : kBlack) : secondary;
+        widgets::DottedFrame(g, Rect{item.x, item.y + 4, item.width, rowHeight - 8},
+                             selected ? textColor : current ? kBlack : kDim);
         g.TextAligned(Rect{item.x + 3, item.y, item.width - 6, item.height}, text, textColor, font, Align::Left);
         AddHit(item, {Kind::SelectScenePage, static_cast<int>(i), static_cast<int>(page)});
       }
@@ -525,6 +551,10 @@ void View::Render(Gfx& g, Controller& controller, Animator& animator)
     hud.labelY = 7;hud.valueY = 23;hud.meterWidth = 130;hud.meterHeight = 6;hud.meterY = 27;
     hud.valueMeterReserve = 160;
     if (state.toast.text.empty() && !(state.scene == Scene::Sequence && controller.CurrentPage() == 0 && controller.View() == SeqView::Roll)) render::DrawHud(g, controller, animator, hud);
+  }
+  // Shared validation errors remain visible while a modal is open.
+  if (sinceBoot >= kBootMs)
+  {
     render::ToastStyle toast;
     toast.band = Rect{56, 464, 368, 14};toast.textX = 65;toast.textY = 466;
     toast.markerX = 56;toast.markerY = 465;toast.maxCharacters = 58;
@@ -573,7 +603,7 @@ void View::Tick(Controller& controller, std::uint32_t nowMs)
     if (pointer.generation != generation || layer_ != Layer::None || controller.TopModal() != nullptr ||
         controller.HostView().Sampler().SavingTrack() >= 0)
     {
-      if (pointer.note >= 0) (void)controller.Dispatch({Kind::PerformanceUp, pointer.id}, nowMs);
+      if (pointer.note >= 0) (void)controller.Dispatch({Kind::PerformanceCancel, pointer.id}, nowMs);
       pointer.note = -1;
       pointer.cancelled = true;
     }
@@ -606,14 +636,14 @@ bool View::Pointer(Controller& controller, const Device::Touch::Event& event, st
     if (!pointer.cancelled && (pointer.generation != generation || renderGeneration_ != generation ||
         layer_ != Layer::None || controller.TopModal() != nullptr || controller.HostView().Sampler().SavingTrack() >= 0))
     {
-      if (pointer.note >= 0) (void)controller.Dispatch({Kind::PerformanceUp, pointer.id}, nowMs);
+      if (pointer.note >= 0) (void)controller.Dispatch({Kind::PerformanceCancel, pointer.id}, nowMs);
       pointer.note = -1;
       pointer.cancelled = true;
     }
     if (pointer.cancelled) return true;
     const int note = PerformanceNoteAt(event.x, event.y);
     if (note == pointer.note) return true;
-    if (pointer.note >= 0) (void)controller.Dispatch({Kind::PerformanceUp, pointer.id}, nowMs);
+    if (pointer.note >= 0) (void)controller.Dispatch({Kind::PerformanceCancel, pointer.id}, nowMs);
     pointer.note = -1;
     if (note >= 0 && controller.Dispatch({Kind::PerformanceDown, pointer.id, note}, nowMs)) pointer.note = note;
     return true;
@@ -642,7 +672,11 @@ bool View::Pointer(Controller& controller, const Device::Touch::Event& event, st
     {
       if (!layout::Contains(hits_[i - 1].rect, event.x, event.y)) continue;
       controller.NotifyNativeInput(nowMs);
-      CancelPerformance(controller, nowMs);
+      const auto& hit = hits_[i - 1];
+      const auto role = static_cast<KeyRole>(hit.command.index);
+      const bool keepPerformance = hit.command.kind == Kind::SelectStep ||
+          (hit.side && controller.HeldNoteEdit() && (role == KeyRole::Add || role == KeyRole::Sub || role == KeyRole::Enter));
+      if (!keepPerformance) CancelPerformance(controller, nowMs);
       pressed_ = hits_[i - 1];
       pointerId_ = event.id;
       pointerDown_ = true;
@@ -738,15 +772,16 @@ bool View::Pointer(Controller& controller, const Device::Touch::Event& event, st
       }
       else
       {
-        if (hit.command.kind == Kind::RollWindow)
+        if (hit.command.kind == Kind::RollPitch)
+          rollLowNote_ = std::clamp(rollLowNote_ + hit.command.index, 0, 120);
+        else if (hit.command.kind == Kind::SceneListScroll)
         {
-          const auto count = controller.HostView().Sequencer().TrackStepCount(controller.State().track);
-          const int last = count == 0 ? 0 : static_cast<int>((count - 1) / 8 * 8);
-          rollFirstStep_ = static_cast<std::size_t>(std::clamp(static_cast<int>(rollFirstStep_) + hit.command.index, 0, last));
-          rollLowNote_ = std::clamp(rollLowNote_ + hit.command.value, 0, 120);
+          const auto scene = static_cast<std::size_t>(hit.command.index);
+          if (scene < sceneListScroll_.size())
+            sceneListScroll_[scene] = static_cast<std::size_t>(std::max(0, static_cast<int>(sceneListScroll_[scene]) + hit.command.value));
         }
         else (void)controller.Dispatch(hit.command, nowMs);
-        if (hit.command.kind == Kind::TrackMapCell ||
+        if (hit.command.kind == Kind::TrackMapCell || hit.command.kind == Kind::SceneListScroll ||
             (layer_ == Layer::Scenes && (hit.command.kind == Kind::SelectScene || hit.command.kind == Kind::SelectScenePage)) ||
             (layer_ == Layer::Pages && hit.command.kind == Kind::SelectPage))
         {

@@ -111,6 +111,8 @@ enum class TextPurpose : std::uint8_t {
   Search,  // the filter of the preset / sample browser underneath (FN + F)
 };
 
+enum class TextInputAction : std::uint8_t { Insert, Backspace, Delete, Left, Right, Start, End, Clear };
+
 enum class ConfirmPurpose : std::uint8_t {
   NewProject,
   LoadProject,
@@ -530,6 +532,10 @@ public:
   ProjectUiSettings Settings() const;
 
   void KeyEvent(std::size_t row, std::size_t column, bool pressed, std::uint32_t nowMs);
+  // Display policy only. Paging, selection and playback follow stay in the
+  // sequencer and are shared by matrix keys, touch and external controls.
+  void SetRollWindowSteps(std::size_t steps);
+  bool HeldNoteEdit() const { return PadEditHeld(); }
 #if defined(CARDENZA_NATIVE_UI)
   // Native pointer input uses domain commands; physical keyboard input remains
   // routed through KeyEvent. True means accepted input/activity, not project dirty.
@@ -666,9 +672,11 @@ public:
   bool IsChordNoteHeld(int note) const;
 
 private:
+  void SyncSequenceViewport();
+  std::size_t rollWindowSteps_ = kGridCount;
 #if defined(CARDENZA_NATIVE_UI)
   bool NativeFocusCell(std::size_t index);
-  void NativeEnter();
+  bool ActivateCell(std::size_t index);
   void NativeCancelGesture();
   std::uint8_t nativeFocusedCell_ = 0xFF;
   bool nativeSampleSaving_ = false;
@@ -681,13 +689,14 @@ private:
     std::uint8_t id = 0, track = 0, baseNote = 0, count = 0, velocity = 0;
     bool arp = false;
     std::array<std::uint8_t, kMaxPadNotes> notes{};
+    PadEdit edit{};
   };
   std::array<NativeContact, 16> nativeContacts_{};
   // Read by the sequencer clock task; the UI alone owns the contact/pad arrays.
   std::array<std::array<std::atomic<std::uint32_t>, 4>, kTrackCount> nativeDirectHeld_{};
   void NativePublishPerformance();
   bool NativeNoteDown(std::uint8_t contact, std::uint8_t note, std::uint8_t velocity);
-  bool NativeNoteUp(std::uint8_t contact);
+  bool NativeNoteUp(std::uint8_t contact, bool commitEdit = true);
   void NativeReleasePerformance();
   std::size_t NativeNoteOwners(std::size_t track, std::uint8_t note, bool arp) const;
   void NativeSoundPerformance(std::size_t track, std::uint8_t note, std::uint8_t velocity, bool on, bool arp);
@@ -703,6 +712,7 @@ private:
   void ReleaseGrid(std::size_t index);
   bool HandleFnKey(std::size_t row, std::size_t column);
   bool HandleTextKey(std::size_t row, std::size_t column);
+  bool EditText(TextInputAction action, char value = 0);
   bool HandleSearchKey(std::size_t row, std::size_t column);
 
   // Navigation
@@ -783,11 +793,24 @@ private:
   void ApplyPreset(const std::string& presetId);
   void ApplyEngine(synth::SynthEngineKind kind);
   bool PadForSequence(std::size_t pad, int key, const std::uint8_t* notes, std::size_t count, std::uint8_t velocity = 0);
+  bool BeginPadEdit(PadEdit& edit, int key, const std::uint8_t* notes, std::size_t count, std::uint8_t velocity);
+  void FinishPadEdit(const PadEdit& edit, std::size_t track);
+  struct HeldNoteEditRef {
+    PadEdit* edit = nullptr;
+    std::uint8_t* root = nullptr;
+    std::array<std::uint8_t, kMaxPadNotes>* notes = nullptr;
+    std::uint8_t* count = nullptr;
+    std::uint8_t track = 0, velocity = 0;
+    bool arp = false;
+    std::size_t pad = 0;
+  };
+  static constexpr std::size_t kHeldEditCapacity = kRows * kPadColumns + 16;
+  std::size_t CollectHeldNoteEdits(std::array<HeldNoteEditRef, kHeldEditCapacity>& edits);
   // ADD / SUB with pads held on the note page: the current edit lane for their notes only, on the
   // selected steps (PadEdit; NOTE moves them, MovePadNotes). True when a pad took the keys, which then
   // do nothing else.
   bool AdjustHeldPadNotes(int delta, bool coarse);
-  void MovePadNotes(const std::size_t* pads, std::size_t count, int delta, bool coarse);
+  void MovePadNotes(const HeldNoteEditRef* pads, std::size_t count, int delta, bool coarse);
   bool PadEditHeld() const;
   void UsePadEdits();
   // Recording (GrooveRecord.cpp).

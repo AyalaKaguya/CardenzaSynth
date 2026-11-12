@@ -19,9 +19,10 @@ enum class Kind : std::uint8_t {
   TextKey,        // ASCII or -1 backspace, -2 left, -3 right, -4 clear
   Search,         // open browser search field
   SelectScenePage, // index = scene, value = page
-  RollWindow,     // view: index = time delta in steps, value = pitch delta
+  SceneListScroll, // view only: index = scene, value = scroll delta
+  SequencePage,   // index = direction; uses the shared page/selection policy
+  RollPitch,      // view only: index = pitch window delta
   RollNote,       // index = absolute step, value = MIDI note; toggle one note
-  RollLane,       // cycle NOTE / LEN / VEL / TIME / HITS
   TrackMapCell,    // index = row * 4 + track: select / mute / solo / seq
   SelectPage,      // index = page in the current scene
   FocusCell,       // index = semantic page cell 0..15; focus only
@@ -35,6 +36,7 @@ enum class Kind : std::uint8_t {
   FocusMaster,     // focus device master output volume on MIX
   PerformanceDown, // index=contact ID, value=visible MIDI note, velocity=0 uses keyboard setting
   PerformanceUp,   // index=contact ID; release its captured track/chord
+  PerformanceCancel, // release without committing a note-edit tap
   PerformanceCancelAll,
 };
 

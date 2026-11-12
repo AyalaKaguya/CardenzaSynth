@@ -845,11 +845,15 @@ void Controller::RunSlotAction(SlotAction action)
 // is selected.
 bool Controller::PadForSequence(std::size_t pad, int key, const std::uint8_t* notes, std::size_t count, std::uint8_t velocity)
 {
-  state_.padEdit[pad] = PadEdit{};
+  return BeginPadEdit(state_.padEdit[pad], key, notes, count, velocity);
+}
+
+bool Controller::BeginPadEdit(PadEdit& edit, int key, const std::uint8_t* notes, std::size_t count, std::uint8_t velocity)
+{
+  edit = PadEdit{};
   if (count == 0) return false;
   auto& sequencer = host_.Sequencer();
   if (!sequencer.HasHeldSteps()) return false;
-  PadEdit& edit = state_.padEdit[pad];
   edit.active = true;
   edit.root = static_cast<std::uint8_t>(DrumTrack() ? key : SnapToScale(state_.keyboard, key));
   edit.velocity = velocity;
@@ -860,17 +864,47 @@ bool Controller::PadForSequence(std::size_t pad, int key, const std::uint8_t* no
   return true;
 }
 
+void Controller::FinishPadEdit(const PadEdit& edit, std::size_t track)
+{
+  if (edit.active && edit.removeOnRelease && !edit.used && track == state_.track && state_.scene == Scene::Sequence &&
+      CurrentPage() == 0 && TopModal() == nullptr && host_.Sequencer().ToggleNotesOnSelectedSteps(edit.notes.data(), edit.count, edit.velocity))
+    MarkDirty();
+}
+
+std::size_t Controller::CollectHeldNoteEdits(std::array<HeldNoteEditRef, kHeldEditCapacity>& edits)
+{
+  std::size_t count = 0;
+  for (std::size_t pad = 0; pad < state_.padEdit.size(); ++pad)
+    if (state_.padEdit[pad].active && state_.padNote[pad] != kNoNote && state_.padTrack[pad] == state_.track)
+      edits[count++] = HeldNoteEditRef{&state_.padEdit[pad], &state_.padNote[pad], &state_.padChord[pad], &state_.padChordCount[pad],
+          state_.padTrack[pad], state_.padVelocity[pad], state_.padArp[pad], pad};
+#if defined(CARDENZA_NATIVE_UI)
+  for (auto& contact : nativeContacts_)
+    if (contact.active && contact.edit.active && contact.track == state_.track)
+      edits[count++] = HeldNoteEditRef{&contact.edit, &contact.baseNote, &contact.notes, &contact.count,
+          contact.track, contact.velocity, contact.arp, 0};
+#endif
+  return count;
+}
+
 bool Controller::PadEditHeld() const
 {
   if (state_.scene != Scene::Sequence || CurrentPage() != 0 || TopModal() != nullptr) return false;
   for (std::size_t pad = 0; pad < state_.padEdit.size(); ++pad)
     if (state_.padEdit[pad].active && state_.padNote[pad] != kNoNote && state_.padTrack[pad] == state_.track) return true;
+#if defined(CARDENZA_NATIVE_UI)
+  for (const auto& contact : nativeContacts_)
+    if (contact.active && contact.edit.active && contact.track == state_.track) return true;
+#endif
   return false;
 }
 
 void Controller::UsePadEdits()
 {
   for (PadEdit& edit : state_.padEdit) edit.used = edit.used || edit.active;
+#if defined(CARDENZA_NATIVE_UI)
+  for (auto& contact : nativeContacts_) contact.edit.used = contact.edit.used || contact.edit.active;
+#endif
 }
 
 // ADD / SUB with lit pads held on the note page (PadEdit): the current edit lane (OK cycles it), for
@@ -881,10 +915,8 @@ void Controller::UsePadEdits()
 bool Controller::AdjustHeldPadNotes(int delta, bool coarse)
 {
   if (delta == 0 || !PadEditHeld()) return false;
-  std::array<std::size_t, kRows * kPadColumns> pads{};
-  std::size_t padCount = 0;
-  for (std::size_t pad = 0; pad < state_.padEdit.size(); ++pad)
-    if (state_.padEdit[pad].active && state_.padNote[pad] != kNoNote && state_.padTrack[pad] == state_.track) pads[padCount++] = pad;
+  std::array<HeldNoteEditRef, kHeldEditCapacity> pads{};
+  const auto padCount = CollectHeldNoteEdits(pads);
   // The keys belong to the pads until they let go (also while ADD / SUB repeat), and the pads keep
   // their notes when they do.
   state_.repeat.padMove = true;
@@ -898,12 +930,12 @@ bool Controller::AdjustHeldPadNotes(int delta, bool coarse)
     return true;
   }
   // The held pads' notes together, each once.
-  std::array<std::uint8_t, kRows * kPadColumns * kMaxPadNotes> notes{};
+  std::array<std::uint8_t, 128> notes{};
   std::size_t count = 0;
   std::string names;
   for (std::size_t order = 0; order < padCount; ++order)
   {
-    const PadEdit& edit = state_.padEdit[pads[order]];
+    const PadEdit& edit = *pads[order].edit;
     for (std::size_t voice = 0; voice < edit.count; ++voice)
     {
       if (std::find(notes.begin(), notes.begin() + static_cast<std::ptrdiff_t>(count), edit.notes[voice]) != notes.begin() + static_cast<std::ptrdiff_t>(count)) continue;
@@ -923,9 +955,9 @@ bool Controller::AdjustHeldPadNotes(int delta, bool coarse)
 // drum track a hit moves to the next drum of the kit in pad order (kDrumNotes; FN the same), past the
 // drums those steps already hold, and never off the kit. Stopped, the pad sounds where its notes went;
 // it keeps moving the same notes while it is down.
-void Controller::MovePadNotes(const std::size_t* heldPads, std::size_t padCount, int delta, bool coarse)
+void Controller::MovePadNotes(const HeldNoteEditRef* heldPads, std::size_t padCount, int delta, bool coarse)
 {
-  std::array<std::size_t, kRows * kPadColumns> pads{};
+  std::array<HeldNoteEditRef, kHeldEditCapacity> pads{};
   padCount = std::min(padCount, pads.size());
   std::copy(heldPads, heldPads + padCount, pads.begin());
   const int direction = delta > 0 ? 1 : -1;
@@ -938,8 +970,8 @@ void Controller::MovePadNotes(const std::size_t* heldPads, std::size_t padCount,
     return -1;
   };
   // Up from the highest pad, down from the lowest: held pads never land on each other.
-  std::sort(pads.begin(), pads.begin() + static_cast<std::ptrdiff_t>(padCount), [&](std::size_t left, std::size_t right) {
-    const int a = rank(state_.padEdit[left].root), b = rank(state_.padEdit[right].root);
+  std::sort(pads.begin(), pads.begin() + static_cast<std::ptrdiff_t>(padCount), [&](const HeldNoteEditRef& left, const HeldNoteEditRef& right) {
+    const int a = rank(left.edit->root), b = rank(right.edit->root);
     return direction > 0 ? a > b : a < b;
   });
   auto& sequencer = host_.Sequencer();
@@ -947,8 +979,8 @@ void Controller::MovePadNotes(const std::size_t* heldPads, std::size_t padCount,
   std::string names;
   for (std::size_t order = 0; order < padCount; ++order)
   {
-    const std::size_t pad = pads[order];
-    PadEdit& edit = state_.padEdit[pad];
+    const auto& pad = pads[order];
+    PadEdit& edit = *pad.edit;
     std::array<bool, 128> taken{};
     if (sequencer.SelectedStepsHoldAny(edit.notes.data(), edit.count, &taken))
     {
@@ -981,16 +1013,30 @@ void Controller::MovePadNotes(const std::size_t* heldPads, std::size_t padCount,
       {
         MarkDirty();
         // Stopped, the pad sounds (and the screen shows it held) where its notes went.
-        if (state_.padChordCount[pad] != 0)
+        if (*pad.count != 0)
         {
-          SoundPad(pad, false);
-          std::copy(moved.begin(), moved.begin() + edit.count, state_.padChord[pad].begin());
-          state_.padChordCount[pad] = edit.count;
-          SoundPad(pad, true, false);
+#if defined(CARDENZA_NATIVE_UI)
+          const auto oldNotes = *pad.notes;
+          const auto oldCount = *pad.count;
+          *pad.count = 0;
+          NativePublishPerformance();
+          for (std::size_t voice = 0; voice < oldCount; ++voice)
+            NativeSoundPerformance(pad.track, oldNotes[voice], pad.velocity, false, pad.arp);
+          *pad.notes = moved;
+          *pad.count = edit.count;
+          NativePublishPerformance();
+          for (std::size_t voice = 0; voice < edit.count; ++voice)
+            NativeSoundPerformance(pad.track, moved[voice], pad.velocity, true, pad.arp);
+#else
+          SoundPad(pad.pad, false);
+          *pad.notes = moved;
+          *pad.count = edit.count;
+          SoundPad(pad.pad, true, false);
+#endif
         }
         edit.root = static_cast<std::uint8_t>(root);
         edit.notes = moved;
-        state_.padNote[pad] = edit.root;
+        *pad.root = edit.root;
         // The STEP view's GRID shows the row the note went to.
         if (drums) state_.drumLane[state_.track] = static_cast<std::uint8_t>(rank(root));
         else state_.noteLane[state_.track] = edit.root;
@@ -1013,7 +1059,7 @@ void Controller::StepKeyPress(std::size_t index)
   auto& sequencer = host_.Sequencer();
   const auto ui = sequencer.BuildUiState(state_.track);
   const std::size_t step = ui.firstViewStep + index;
-  if (index >= kGridCount || step >= ui.tracks[state_.track].stepCount) return;
+  if (index >= ui.viewStepCount || step >= ui.tracks[state_.track].stepCount) return;
   StepKey& key = state_.stepKeys[index];
   key = StepKey{};
   key.down = true;
@@ -1029,9 +1075,16 @@ void Controller::StepKeyPress(std::size_t index)
     std::array<std::uint8_t, kRows * kPadColumns> velocities{};
     const bool drums = ActiveKind() == synth::SynthEngineKind::Drums;
     for (std::size_t held = 0; drums && held < count; ++held)
+    {
       for (std::size_t pad = 0; pad < state_.padNote.size(); ++pad)
         if (state_.padNote[pad] == notes[held] && state_.padTrack[pad] == state_.track)
           velocities[held] = std::max(velocities[held], state_.padVelocity[pad]);
+#if defined(CARDENZA_NATIVE_UI)
+      for (const auto& contact : nativeContacts_)
+        if (contact.active && contact.baseNote == notes[held] && contact.track == state_.track)
+          velocities[held] = std::max(velocities[held], contact.velocity);
+#endif
+    }
     if (sequencer.ToggleStepNotes(state_.track, step, notes.data(), count, drums ? velocities.data() : nullptr)) MarkDirty();
     return;
   }
@@ -1150,8 +1203,25 @@ void Controller::SequenceGrid(std::size_t index)
   }
 }
 
+void Controller::SetRollWindowSteps(std::size_t steps)
+{
+  rollWindowSteps_ = std::clamp<std::size_t>(steps, 1, kGridCount);
+  SyncSequenceViewport();
+}
+
+void Controller::SyncSequenceViewport()
+{
+  for (std::size_t track = 0; track < kTrackCount; ++track)
+  {
+    const auto view = host_.EngineKind(track) == synth::SynthEngineKind::Drums ? state_.record.drumView : state_.record.noteView;
+    host_.Sequencer().SetViewStepCount(track, view == SeqView::Roll ? rollWindowSteps_ : kGridCount);
+  }
+}
+
 void Controller::FlipStepPage(int delta)
 {
+  StopStepAudition();
+  UsePadEdits();
   auto& sequencer = host_.Sequencer();
   const auto ui = sequencer.BuildUiState(state_.track);
   const int count = static_cast<int>(ui.viewPageCount);

@@ -302,6 +302,7 @@ void Controller::ToggleSeqView()
 {
   SeqView& view = DrumTrack() ? state_.record.drumView : state_.record.noteView;
   view = view == SeqView::Roll ? SeqView::Step : SeqView::Roll;
+  SyncSequenceViewport();
   ShowHud("VIEW", ViewName(view, DrumTrack()));
 }
 

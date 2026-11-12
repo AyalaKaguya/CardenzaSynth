@@ -156,6 +156,8 @@ ModalGeometry PaintListRows(Gfx& g, Animator& animator, const ListData& data, co
     if (data.row == nullptr || !data.row(data.context, first + row, rowLabel, marked)) continue;
     const int y = rows.y + static_cast<int>(row) * style.rowHeight;
     const bool covered = std::fabs(static_cast<float>(y) - barY) < static_cast<float>(style.rowHeight) * 0.5f;
+    if (style.panel.spacious)
+      widgets::DottedFrame(g, Rect{rows.x, y, rows.width, style.highlightHeight}, covered ? kBlack : kDim);
     const float reveal = fx::Clamp01(opened * 3.0f - static_cast<float>(row) * 0.25f);
     if (marked) g.Text(rows.x + style.markOffsetX, y + style.markOffsetY, ">", covered ? kBlack : kTab, style.markFont);
     const auto label = rowLabel.substr(0, std::min(rowLabel.size(),
@@ -188,6 +190,7 @@ void PanelCellValue(Gfx& g, Rect rect, std::string_view label, std::string_view 
     metrics.paddingX = metrics.rightPadding = 5;
     metrics.labelY = 4; metrics.labelHeight = 17; metrics.valueY = 32; metrics.barBottom = 5; metrics.barHeight = 3;
     metrics.labelFont = Font::Small; metrics.valueFont = Font::Large;
+    metrics.dottedOutline = true;
   }
   if (style.spacious && animator != nullptr)
   {
@@ -210,6 +213,7 @@ void PanelAction(Gfx& g, Rect rect, std::string_view label, std::string_view det
   metrics.labelY = 6;
   metrics.detailBottom = 21;
   metrics.focusBandHeight = 21;
+  metrics.strongOutline = true;
   const auto now = animator != nullptr ? animator->Now() : 0;
   const float flash = animator != nullptr ? fx::Decay(now, animator->GridPressedAt(index), 220) : 0;
   widgets::ActionCell(g, rect, label, detail, focused, false, true, accent, metrics, flash, now);

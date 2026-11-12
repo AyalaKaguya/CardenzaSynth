@@ -1413,8 +1413,9 @@ SequencerUiState SynthSequencer::BuildUiState(std::size_t activeTrack) const
   if (track != nullptr)
   {
     state.viewPage = ViewPageLocked(activeTrack);
-    state.viewPageCount = (TrackStepCountOf(*track) + kSequencerStepCount - 1) / kSequencerStepCount;
-    state.firstViewStep = state.viewPage * kSequencerStepCount;
+    state.viewStepCount = viewStepCount_[activeTrack];
+    state.viewPageCount = (TrackStepCountOf(*track) + state.viewStepCount - 1) / state.viewStepCount;
+    state.firstViewStep = state.viewPage * state.viewStepCount;
     state.viewFollow = viewFollow_[activeTrack];
   }
   for (std::size_t stepIndex = 0; stepIndex < heldSteps_.size(); ++stepIndex)
@@ -1430,7 +1431,8 @@ SequencerUiState SynthSequencer::BuildUiState(std::size_t activeTrack) const
   for (std::size_t cellIndex = 0; cellIndex < state.steps.size(); ++cellIndex)
   {
     const std::size_t stepIndex = state.firstViewStep + cellIndex;
-    const StepData* step = track != nullptr ? &ActivePatternLocked(*track).steps[stepIndex] : nullptr;
+    const bool visible = track != nullptr && cellIndex < state.viewStepCount && stepIndex < TrackStepCountOf(*track);
+    const StepData* step = visible ? &ActivePatternLocked(*track).steps[stepIndex] : nullptr;
     auto& cell = state.steps[cellIndex];
     if (step != nullptr)
       for (const NoteEvent& note : step->notes)
@@ -1448,8 +1450,8 @@ SequencerUiState SynthSequencer::BuildUiState(std::size_t activeTrack) const
           cell.hits = std::max(cell.hits, note.Hits());
         }
     cell.hasEvents = cell.noteCount > 0;
-    cell.held = heldSteps_[stepIndex];
-    cell.playing = playing_ && state.currentStep == stepIndex;
+    cell.held = visible && heldSteps_[stepIndex];
+    cell.playing = visible && playing_ && state.currentStep == stepIndex;
   }
   if (primaryHeldStep != nullptr)
   {
@@ -1930,11 +1932,26 @@ std::size_t SynthSequencer::ViewPageLocked(std::size_t trackIndex) const
     viewPage_[trackIndex] = 0;
   }
   const std::size_t stepCount = TrackStepCountOf(track);
-  const std::size_t pageCount = (stepCount + kSequencerStepCount - 1) / kSequencerStepCount;
+  const std::size_t pageSteps = viewStepCount_[trackIndex];
+  const std::size_t pageCount = (stepCount + pageSteps - 1) / pageSteps;
   // The page stays put while steps are selected, so an edit never moves away under the fingers.
   if (playing_ && viewFollow_[trackIndex] && std::none_of(heldSteps_.begin(), heldSteps_.end(), [](bool held) { return held; }))
-    viewPage_[trackIndex] = static_cast<std::uint8_t>(std::min<std::size_t>(trackCurrentPulse_[trackIndex] / kSequencerPulsesPerStep, stepCount - 1) / kSequencerStepCount);
+    viewPage_[trackIndex] = static_cast<std::uint8_t>(std::min<std::size_t>(trackCurrentPulse_[trackIndex] / kSequencerPulsesPerStep, stepCount - 1) / pageSteps);
   return std::min<std::size_t>(viewPage_[trackIndex], pageCount - 1);
+}
+
+void SynthSequencer::SetViewStepCount(std::size_t trackIndex, std::size_t steps)
+{
+  if (trackIndex >= tracks_.size()) return;
+  steps = std::clamp<std::size_t>(steps, 1, kSequencerStepCount);
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (viewStepCount_[trackIndex] == steps) return;
+  std::size_t anchor = ViewPageLocked(trackIndex) * viewStepCount_[trackIndex];
+  if (trackIndex == activeTrack_)
+    for (std::size_t step = 0; step < heldSteps_.size(); ++step)
+      if (heldSteps_[step]) { anchor = step; break; }
+  viewStepCount_[trackIndex] = static_cast<std::uint8_t>(steps);
+  viewPage_[trackIndex] = static_cast<std::uint8_t>(std::min(anchor, TrackStepCountOf(tracks_[trackIndex]) - 1) / steps);
 }
 
 void SynthSequencer::SetViewPage(std::size_t trackIndex, std::size_t page)
@@ -1942,7 +1959,8 @@ void SynthSequencer::SetViewPage(std::size_t trackIndex, std::size_t page)
   if (trackIndex >= tracks_.size()) return;
   std::lock_guard<std::mutex> lock(mutex_);
   (void)ViewPageLocked(trackIndex);
-  viewPage_[trackIndex] = static_cast<std::uint8_t>(std::min(page, kSequencerMaxStepPages - 1));
+  const auto pages = (TrackStepCountOf(tracks_[trackIndex]) + viewStepCount_[trackIndex] - 1) / viewStepCount_[trackIndex];
+  viewPage_[trackIndex] = static_cast<std::uint8_t>(std::min(page, pages - 1));
   viewFollow_[trackIndex] = false;
 }
 
@@ -1950,7 +1968,7 @@ std::size_t SynthSequencer::ViewFirstStep(std::size_t trackIndex) const
 {
   if (trackIndex >= tracks_.size()) return 0;
   std::lock_guard<std::mutex> lock(mutex_);
-  return ViewPageLocked(trackIndex) * kSequencerStepCount;
+  return ViewPageLocked(trackIndex) * viewStepCount_[trackIndex];
 }
 
 void SynthSequencer::SetStepSelected(std::size_t stepIndex, bool selected)

@@ -576,7 +576,7 @@ void DrawBoot(Gfx& g, Animator& animator)
 
 }  // namespace
 
-void render::DrawMapTile(Gfx& g, const Rect& tile, bool current, bool usable, Color accent, std::uint32_t now, Color fill)
+void render::DrawMapTile(Gfx& g, const Rect& tile, bool current, bool usable, Color accent, std::uint32_t now, Color fill, bool dottedOutline)
 {
   if (current)
   {
@@ -588,7 +588,8 @@ void render::DrawMapTile(Gfx& g, const Rect& tile, bool current, bool usable, Co
   if (usable)
   {
     g.Dither(tile, kFaint, 2);
-    g.Stroke(tile, kDim);
+    if (dottedOutline) widgets::DottedFrame(g, tile, kDim);
+    else g.Stroke(tile, kDim);
   }
   else
   {

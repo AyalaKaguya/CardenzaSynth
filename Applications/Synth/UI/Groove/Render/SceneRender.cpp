@@ -833,8 +833,7 @@ void PaintMixBadge(Gfx& g, const Controller& controller, Animator& animator, con
     if (states[kind]) g.Fill(rect, colors[kind]);
     else
     {
-      g.DottedHLine(rect.x, rect.y, rect.width, kFaint);
-      g.DottedHLine(rect.x, rect.y + rect.height - 1, rect.width, kFaint);
+      widgets::DottedFrame(g, rect, kDim);
     }
     g.TextAligned(rect, names[kind], states[kind] ? kBlack : kDim, font, Align::Center);
   }
@@ -1117,15 +1116,23 @@ void PaintFxChain(Gfx& g, const Controller& controller, Animator& animator, cons
 }
 
 void PaintPianoRoll(Gfx& g, const Controller& controller, Animator& animator, const synth::SequencerUiState& seq,
-                    const PianoRollLayout& layout)
+                    const PianoRollLayout& layout, PianoRollGeometry* geometry)
 {
+  const Rect savedClip = g.Clip();
+  const int left = std::max(savedClip.x, layout.area.x + g.OriginX());
+  const int topEdge = std::max(savedClip.y, layout.area.y + g.OriginY());
+  const int right = std::min(savedClip.x + savedClip.width, layout.area.x + g.OriginX() + layout.area.width);
+  const int bottomEdge = std::min(savedClip.y + savedClip.height, layout.area.y + g.OriginY() + layout.area.height);
+  if (geometry != nullptr) *geometry = PianoRollGeometry{};
+  if (right <= left || bottomEdge <= topEdge) return;
+  g.SetClip(Rect{left, topEdge, std::max(0, right - left), std::max(0, bottomEdge - topEdge)});
   const UiState& state = controller.State();
   const std::uint32_t now = animator.Now();
   const auto& sequencer = controller.HostView().Sequencer();
   // The roll shows the GRID's page of the pattern.
   const std::size_t length = std::max<std::size_t>(1, seq.tracks[state.track].stepCount);
   const std::size_t first = seq.firstViewStep;
-  const std::size_t steps = std::clamp<std::size_t>(length > first ? length - first : 1, 1, kGridCount);
+  const std::size_t steps = std::clamp<std::size_t>(length > first ? length - first : 1, 1, seq.viewStepCount);
   const Color trackColor = TrackColor(state.track);
   const int kGutter = layout.gutter;
   const int kStrip = layout.strip;
@@ -1152,13 +1159,14 @@ void PaintPianoRoll(Gfx& g, const Controller& controller, Animator& animator, co
   // Notes of the page before that still sound on this one.
   std::array<std::array<synth::SynthSequencer::StepNoteView, 8>, kGridCount> carried{};
   std::array<std::size_t, kGridCount> carriedCounts{};
-  if (first >= kGridCount)
+  const auto carriedSteps = std::min(first, kGridCount);
+  if (carriedSteps > 0)
   {
-    for (std::size_t step = 0; step < kGridCount; ++step)
+    for (std::size_t step = 0; step < carriedSteps; ++step)
     {
-      const std::size_t pulseStart = (first - kGridCount + step) * synth::kSequencerPulsesPerStep;
+      const std::size_t pulseStart = (first - carriedSteps + step) * synth::kSequencerPulsesPerStep;
       std::array<synth::SynthSequencer::StepNoteView, 8> before{};
-      const std::size_t count = sequencer.StepNoteEvents(state.track, first - kGridCount + step, before);
+      const std::size_t count = sequencer.StepNoteEvents(state.track, first - carriedSteps + step, before);
       for (std::size_t index = 0; index < count; ++index)
       {
         const std::size_t end = pulseStart + before[index].microstep * synth::kSequencerPulsesPerMicrostep +
@@ -1241,33 +1249,83 @@ void PaintPianoRoll(Gfx& g, const Controller& controller, Animator& animator, co
   }
   low = std::max(0, low);
   high = std::min(127, high);
-  const int rows = high - low + 1;
+  const bool fixedRows = layout.pitchRows > 0;
+  if (fixedRows && !drums)
+  {
+    low = std::clamp(layout.lowestNote, 0, 128 - std::clamp(layout.pitchRows, 1, 128));
+    high = low + std::clamp(layout.pitchRows, 1, 128) - 1;
+  }
+  const int rows = fixedRows && drums ? static_cast<int>(kDrumNotes.size()) : high - low + 1;
   const int rowHeight = std::max(2, (bottom - top) / rows);
   const int height = rowHeight * rows;
   const int y0 = top + (bottom - top - height) / 2;
-  auto rowY = [&](int note) { return y0 + (high - note) * rowHeight; };
-
-  // Keyboard rows: black keys shaded, every C labelled.
-  for (int note = low; note <= high; ++note)
-  {
-    const int pitch = note % 12;
-    const bool black = pitch == 1 || pitch == 3 || pitch == 6 || pitch == 8 || pitch == 10;
-    const int y = rowY(note);
-    if (black) g.Dither(Rect{x0, y, column * static_cast<int>(steps), rowHeight}, kShade, 3);
-    if (pitch == 0)
+  const auto rowNote = [&](int row) { return fixedRows && drums ? static_cast<int>(kDrumNotes[static_cast<std::size_t>(row)]) : high - row; };
+  const auto rowIndex = [&](int note) {
+    if (fixedRows && drums)
     {
-      g.DottedHLine(x0, y + rowHeight - 1, column * static_cast<int>(steps), kShade, 2);
-      if (rowHeight >= 3 || note % 24 == 0) g.Text(layout.area.x, std::max(top, y + rowHeight - 7), NoteName(note), kFaint, Font::Micro);
+      for (std::size_t lane = 0; lane < kDrumNotes.size(); ++lane)
+        if (kDrumNotes[lane] == note) return static_cast<int>(lane);
+      return -1;
+    }
+    return note >= low && note <= high ? high - note : -1;
+  };
+  auto rowY = [&](int note) { return y0 + rowIndex(note) * rowHeight; };
+  if (geometry != nullptr)
+  {
+    geometry->matrix = Rect{x0, y0, column * static_cast<int>(steps), height};
+    geometry->columnWidth = column;
+  }
+
+  // Pitch rows and hit targets share one note mapping, including the drum kit.
+  for (int row = 0; row < rows; ++row)
+  {
+    const int note = rowNote(row);
+    const int pitch = note % 12;
+    const bool black = !(fixedRows && drums) && (pitch == 1 || pitch == 3 || pitch == 6 || pitch == 8 || pitch == 10);
+    const int y = rowY(note);
+    if (fixedRows)
+    {
+      const Rect label{layout.area.x, y, kGutter - 2, rowHeight - 1};
+      g.Fill(label, black ? kShade : kFaint);
+      const auto text = drums ? std::string(DrumName(note)) : NoteName(note);
+      g.TextAligned(label, text, kInk, layout.labelFont, Align::Center);
+      if (geometry != nullptr && geometry->keyCount < geometry->keys.size())
+        geometry->keys[geometry->keyCount++] = PianoKey{label, note};
+      for (std::size_t step = 0; step < steps; ++step)
+      {
+        const Rect cell{x0 + static_cast<int>(step) * column, y, column - 1, rowHeight - 1};
+        g.Fill(cell, black ? kShade : kBlack);
+        g.Stroke(cell, kFaint);
+        if (geometry != nullptr && geometry->count < geometry->cells.size())
+          geometry->cells[geometry->count++] = PianoRollCell{cell, first + step, static_cast<std::uint8_t>(note)};
+      }
+    }
+    else
+    {
+      if (black) g.Dither(Rect{x0, y, column * static_cast<int>(steps), rowHeight}, kShade, 3);
+      if (pitch == 0)
+      {
+        g.DottedHLine(x0, y + rowHeight - 1, column * static_cast<int>(steps), kShade, 2);
+        if (rowHeight >= 3 || note % 24 == 0) g.Text(layout.area.x, std::max(top, y + rowHeight - 7), NoteName(note), kFaint, Font::Micro);
+      }
     }
   }
   // Held notes: their rows lit across the page (a checker; a drum as dense as its pad hits), their
   // names (a drum's) inverse in the gutter.
-  for (int note = low; note <= high; ++note)
+  for (int row = 0; row < rows; ++row)
   {
+    const int note = rowNote(row);
     const std::uint8_t held = pressed[static_cast<std::size_t>(note)];
     if (held == 0) continue;
     const int y = rowY(note);
     g.Dither(Rect{x0, y, column * static_cast<int>(steps), rowHeight}, kInk, drums ? DrumDensity(held) : 8);
+    if (fixedRows)
+    {
+      const Rect label{layout.area.x, y, kGutter - 2, rowHeight - 1};
+      g.Fill(label, kInk);
+      g.TextAligned(label, drums ? std::string(DrumName(note)) : NoteName(note), kBlack, layout.labelFont, Align::Center);
+      continue;
+    }
     const int labelY = std::clamp(y + rowHeight / 2 - 4, top, bottom - 8);
     const std::string_view drum = drums ? DrumName(note) : std::string_view{};
     g.Fill(Rect{layout.area.x, labelY, kGutter - 2, 8}, kInk);
@@ -1306,8 +1364,8 @@ void PaintPianoRoll(Gfx& g, const Controller& controller, Animator& animator, co
     for (std::size_t index = 0; index < carriedCounts[step]; ++index)
     {
       const auto& note = carried[step][index];
-      if (note.note < low || note.note > high) continue;
-      const int start = static_cast<int>(pulseStart + note.microstep * synth::kSequencerPulsesPerMicrostep) - static_cast<int>(kGridCount * synth::kSequencerPulsesPerStep);
+      if (rowIndex(note.note) < 0) continue;
+      const int start = static_cast<int>(pulseStart + note.microstep * synth::kSequencerPulsesPerMicrostep) - static_cast<int>(carriedSteps * synth::kSequencerPulsesPerStep);
       if (note.hits > 1)
       {
         drawHits(start, note, pressed[note.note & 0x7F] != 0);
@@ -1330,7 +1388,7 @@ void PaintPianoRoll(Gfx& g, const Controller& controller, Animator& animator, co
     for (std::size_t index = 0; index < counts[step]; ++index)
     {
       const auto& note = notes[step][index];
-      if (note.note < low || note.note > high) continue;
+      if (rowIndex(note.note) < 0) continue;
       if (note.hits > 1)
       {
         drawHits(static_cast<int>(step * synth::kSequencerPulsesPerStep + note.microstep * synth::kSequencerPulsesPerMicrostep), note,
@@ -1360,7 +1418,7 @@ void PaintPianoRoll(Gfx& g, const Controller& controller, Animator& animator, co
   }
   // The GRID strip.
   const int stripY = (layout.area.y + layout.area.height) - kStrip;
-  for (std::size_t step = 0; step < kGridCount; ++step)
+  for (std::size_t step = 0; kStrip > 0 && step < kGridCount; ++step)
   {
     const Rect cell{x0 + static_cast<int>(step) * column + 1, stripY, column - 2, kStrip - 2};
     if (step >= steps) continue;
@@ -1379,6 +1437,7 @@ void PaintPianoRoll(Gfx& g, const Controller& controller, Animator& animator, co
     g.TextAligned(Rect{band.x, band.y, band.width, 10}, "HOLD A PAD + TAP STEPS", kDim, Font::Micro, Align::Center);
     g.TextAligned(Rect{band.x, band.y + 10, band.width, 10}, "TAP STEP + PADS  HOLD OK TAKES", (now / 600) % 2 ? kFaint : kShade, Font::Micro, Align::Center);
   }
+  g.SetClip(savedClip);
 }
 
 void PaintStepMachine(Gfx& g, const Controller& controller, Animator& animator, const synth::SequencerUiState& seq,
@@ -1695,12 +1754,14 @@ void PaintPatternGrid(Gfx& g, const Controller& controller, Animator& animator, 
     {
       // The "new" slot breathes to invite a press.
       const float breath = 0.5f + 0.5f * std::sin(static_cast<float>(now) / 380.0f);
-      g.DottedHLine(cell.x, cell.y + cell.height - 1, cell.width, kFaint);
+      if (grid.dottedOutline) widgets::DottedFrame(g, cell, kDim);
+      else g.DottedHLine(cell.x, cell.y + cell.height - 1, cell.width, kFaint);
       g.Text(cell.x + grid.padding, cell.y + 2, "NEW", breath > 0.5f ? kDim : kFaint, grid.labelFont);
       g.DrawGlyph(cell.x + cell.width - 9, cell.y + 12, Glyph::Plus, breath > 0.5f ? kInk : kDim);
       PaintGridRipple(g, animator, index, cell, kTab);
       continue;
     }
+    if (grid.dottedOutline) widgets::DottedFrame(g, cell, kDim);
     const bool active = index == track.activePattern;
     const bool queued = index == track.queuedPattern;
     const bool content = seq.patternHasEvents[index];
@@ -1754,14 +1815,19 @@ void PaintSessionGrid(Gfx& g, const Controller& controller, Animator& animator, 
     {
       if (pattern == summary.patternCount && pattern < synth::kSequencerMaxPatternCount)
       {
-        g.DottedHLine(cell.x, cell.y, cell.width, kFaint);
-        g.DottedHLine(cell.x, cell.y + cell.height - 1, cell.width, kFaint);
+        if (grid.dottedOutline) widgets::DottedFrame(g, cell, kDim);
+        else
+        {
+          g.DottedHLine(cell.x, cell.y, cell.width, kFaint);
+          g.DottedHLine(cell.x, cell.y + cell.height - 1, cell.width, kFaint);
+        }
         g.TextAligned(cell, "+", kDim, Font::Small, Align::Center);
       }
       else g.Pixel(cell.x + cell.width / 2, cell.y + cell.height / 2, kShade);
       PaintGridRipple(g, animator, index, cell, kInk);
       continue;
     }
+    if (grid.dottedOutline) widgets::DottedFrame(g, cell, kDim);
     const bool active = pattern == summary.activePattern;
     const bool playing = active && seq.playing && !summary.songSilent;
     const bool queued = pattern == summary.queuedPattern;
@@ -1822,6 +1888,9 @@ void PaintSongGrid(Gfx& g, const Controller& controller, Animator& animator, con
     }
     if (row == length)
     {
+      if (grid.dottedOutline)
+        for (std::size_t track = 0; track < kRows; ++track)
+          widgets::DottedFrame(g, grid.cells[rowsAreSongRows ? column * kGridColumns + track : track * kGridColumns + column], kDim);
       // The empty column after the song: press to append a row.
       const float breath = 0.5f + 0.5f * std::sin(static_cast<float>(now) / 380.0f);
       g.DottedVLine(span.x, span.y, span.height, kFaint, 2);
@@ -1846,6 +1915,7 @@ void PaintSongGrid(Gfx& g, const Controller& controller, Animator& animator, con
       const Rect cell = grid.cells[rowsAreSongRows ? column * kGridColumns + track : track * kGridColumns + column];
       const int pattern = songRow.patterns[track];
       const bool cursor = row == state.songRow && track == state.songTrack;
+      if (grid.dottedOutline && !cursor) widgets::DottedFrame(g, cell, kDim);
       Color ink = pattern < 0 ? kFaint : kInk;
       if (cursor)
       {

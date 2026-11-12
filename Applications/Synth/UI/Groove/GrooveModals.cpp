@@ -468,9 +468,14 @@ void Controller::CommitText()
     }
     case TextPurpose::SampleRename:
     {
+      std::array<std::string, kTrackCount> previousFiles;
+      for (std::size_t track = 0; track < kTrackCount; ++track)
+        previousFiles[track] = sampler.BuildUiState(track).sampleFileName;
       std::string renamed;
       if (sampler.RenameBrowserSample(state_.track, payload, text, &renamed))
       {
+        for (std::size_t track = 0; track < kTrackCount; ++track)
+          if (previousFiles[track] != sampler.BuildUiState(track).sampleFileName) { MarkDirty(); break; }
         CloseModal();
         if (Top() != nullptr && Top()->kind == ModalKind::SampleOptions) CloseModal();
         if (Top() != nullptr && Top()->kind == ModalKind::SampleBrowser) RefreshSampleBrowser();

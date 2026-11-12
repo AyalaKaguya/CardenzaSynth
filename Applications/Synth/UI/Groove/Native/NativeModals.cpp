@@ -6,6 +6,7 @@
 #include "Applications/Synth/UI/Groove/Native/NativeLayout.h"
 #include "Applications/Synth/UI/Groove/Render/Theme.h"
 #include "Applications/Synth/UI/Groove/Render/ModalComponents.h"
+#include "Applications/Synth/UI/Groove/Render/Widgets.h"
 
 namespace groove::native {
 using namespace theme;
@@ -24,7 +25,10 @@ void View::ModalContent(Gfx& g, const Controller& controller, Animator& animator
       switch (hit.role)
       {
         case render::ModalHitRole::ListRow: AddHit(hit.bounds, {Kind::SelectListRow, static_cast<int>(hit.index)}); break;
-        case render::ModalHitRole::Cell: AddHit(hit.bounds, {Kind::FocusCell, static_cast<int>(hit.index)}); break;
+        case render::ModalHitRole::Cell:
+          AddHit(hit.bounds, {modal.kind == ModalKind::SampleRecord && hit.index >= 2 ? Kind::ActivateCell : Kind::FocusCell,
+                             static_cast<int>(hit.index)});
+          break;
         case render::ModalHitRole::Accept: AddHit(hit.bounds, {Kind::Enter}); break;
         case render::ModalHitRole::Cancel: AddHit(hit.bounds, {Kind::Back}); break;
       }
@@ -47,7 +51,7 @@ void View::ModalContent(Gfx& g, const Controller& controller, Animator& animator
       for (std::size_t key = 0; key < keys.size(); ++key)
       {
         const Rect rect{56 + static_cast<int>(key % 10) * 37, 150 + static_cast<int>(key / 10) * 45, 35, 41};
-        g.Stroke(rect, kDim);
+        widgets::DottedFrame(g, rect, kDim);
         g.TextAligned(rect, keys[key] == ' ' ? "_" : std::string(1, keys[key]), kInk, Font::Large, Align::Center);
         AddHit(rect, {Kind::TextKey, keys[key]});
       }
@@ -56,7 +60,7 @@ void View::ModalContent(Gfx& g, const Controller& controller, Animator& animator
       for (std::size_t key = 0; key < labels.size(); ++key)
       {
         const Rect rect{56 + static_cast<int>(key) * 94, 336, 86, 36};
-        g.Stroke(rect, kDim);
+        widgets::DottedFrame(g, rect, kDim);
         g.TextAligned(rect, labels[key], kInk, Font::Small, Align::Center);
         AddHit(rect, {Kind::TextKey, values[key]});
       }

@@ -166,8 +166,9 @@ public:
   std::size_t TrackStepCount(std::size_t track) const;
   std::size_t PatternStepCount(std::size_t track, std::size_t pattern) const;
 
-  // The GRID shows one page (16 steps) of the current pattern. While playing it follows the
-  // playhead until the page is flipped by hand; Play goes back to following.
+  // A view shows 1..16 steps of the current pattern (16 by default). All input
+  // sources share this window and its follow policy; it is not project data.
+  void SetViewStepCount(std::size_t track, std::size_t steps);
   void SetViewPage(std::size_t track, std::size_t page);
   std::size_t ViewFirstStep(std::size_t track) const;
 
@@ -554,6 +555,7 @@ private:
   // The page of each track's pattern the UI state's steps come from (see ViewPageLocked).
   mutable std::array<std::uint8_t, kSynthTrackCount> viewPage_{};
   mutable std::array<std::uint8_t, kSynthTrackCount> viewPattern_{};
+  std::array<std::uint8_t, kSynthTrackCount> viewStepCount_{{kSequencerStepCount, kSequencerStepCount, kSequencerStepCount, kSequencerStepCount}};
   std::array<bool, kSynthTrackCount> viewFollow_{{true, true, true, true}};
   std::array<bool, kKeyboardMatrixRows> heldEditLanes_{};
   std::array<PlaybackNote, kMaxPlaybackNotes> playbackNotes_{};

@@ -25,6 +25,7 @@ struct ParamCellLayout {
   int barHeight = 2;
   Font labelFont = Font::Micro;
   Font valueFont = Font::Small;
+  bool dottedOutline = false;
 };
 // Different display sizes use the original cell painter with explicit metrics.
 // Focus and availability are independent, including a focused unavailable slot.
@@ -48,6 +49,7 @@ struct ActionCellLayout {
   int labelY = -1;
   int detailBottom = 0;
   int focusBandHeight = 0;
+  bool strongOutline = false;
 };
 void ActionCell(Gfx& g, const Rect& rect, std::string_view label, std::string_view detail,
                 bool focused, bool pressed, bool available, Color accent, const ActionCellLayout& layout,

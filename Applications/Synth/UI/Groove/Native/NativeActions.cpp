@@ -129,7 +129,7 @@ void Controller::NativeSoundPerformance(std::size_t track, std::uint8_t note, st
   }
 }
 
-bool Controller::NativeNoteUp(std::uint8_t id)
+bool Controller::NativeNoteUp(std::uint8_t id, bool commitEdit)
 {
   for (auto& contact : nativeContacts_)
   {
@@ -139,6 +139,7 @@ bool Controller::NativeNoteUp(std::uint8_t id)
     NativePublishPerformance();
     for (std::size_t index = 0; index < released.count; ++index)
       NativeSoundPerformance(released.track, released.notes[index], released.velocity, false, released.arp);
+    if (commitEdit) FinishPadEdit(released.edit, released.track);
     return true;
   }
   return false;
@@ -146,14 +147,14 @@ bool Controller::NativeNoteUp(std::uint8_t id)
 
 void Controller::NativeReleasePerformance()
 {
-  for (auto& contact : nativeContacts_) if (contact.active) NativeNoteUp(contact.id);
+  for (auto& contact : nativeContacts_) if (contact.active) NativeNoteUp(contact.id, false);
 }
 
 bool Controller::NativeNoteDown(std::uint8_t id, std::uint8_t note, std::uint8_t velocity)
 {
   for (const auto& contact : nativeContacts_)
     if (contact.active && contact.id == id && contact.baseNote == note && contact.track == state_.track) return true;
-  NativeNoteUp(id);
+  NativeNoteUp(id, false);
   if (TopModal() != nullptr || host_.Sampler().SavingTrack() >= 0) return false;
   NativeContact* fresh = nullptr;
   for (auto& contact : nativeContacts_) if (!contact.active) { fresh = &contact; break; }
@@ -165,18 +166,12 @@ bool Controller::NativeNoteDown(std::uint8_t id, std::uint8_t note, std::uint8_t
   auto& sequencer = host_.Sequencer();
   const bool drums = kind == synth::SynthEngineKind::Drums;
   velocity = velocity == 0 ? state_.keyboard.velocity : std::min<std::uint8_t>(velocity, 127);
-  bool editing = false;
-  if (state_.scene == Scene::Sequence && CurrentPage() == 0)
-  {
-    // Touch contacts retain their immediate toggle semantics; PadForSequence
-    // now owns the physical keyboard's indexed hold/release edit state.
-    editing = sequencer.HasHeldSteps();
-    if (editing && sequencer.ToggleNotesOnSelectedSteps(chord.data(), count, drums ? velocity : std::uint8_t{0}))
-      MarkDirty();
-  }
+  PadEdit edit;
+  const bool editing = state_.scene == Scene::Sequence && CurrentPage() == 0 &&
+      BeginPadEdit(edit, note, chord.data(), count, drums ? velocity : std::uint8_t{0});
   const bool audition = !editing || !sequencer.Playing();
   *fresh = NativeContact{true, id, static_cast<std::uint8_t>(state_.track), note, static_cast<std::uint8_t>(audition ? count : 0), velocity,
-      audition && !drums && sequencer.GetArpSettings(state_.track).mode != synth::ArpMode::Off, chord};
+      audition && !drums && sequencer.GetArpSettings(state_.track).mode != synth::ArpMode::Off, chord, edit};
   NativePublishPerformance();
   NotifyNativePerformance(state_.track, chord.data(), audition ? count : 0, velocity, state_.now);
   state_.lastTrackNoteAt[state_.track] = state_.now;
@@ -291,64 +286,21 @@ bool Controller::NativeFocusCell(std::size_t index)
   return true;
 }
 
-void Controller::NativeEnter()
+bool Controller::ActivateCell(std::size_t index)
 {
+  if (!NativeFocusCell(index)) return false;
   if (Modal* modal = Top())
   {
-    if (modal->kind == ModalKind::Menu) RunMenu(modal->cursor);
-    else if (modal->kind == ModalKind::SampleRecord)
-    {
-      if (host_.Sampler().BuildUiState(state_.track).hasDraft) SampleRecordGrid(modal->cursor);
-      else SampleRecordEnter();
-    }
-    else if (modal->kind == ModalKind::Record && state_.record.focus <= kRecordView) RecordGrid(state_.record.focus);
-    else ModalEnter();
-    return;
+    if (modal->kind == ModalKind::Menu) RunMenu(index);
+    else if (modal->kind == ModalKind::SampleRecord) SampleRecordGrid(index);
+    else if (modal->kind == ModalKind::Record) RecordGrid(index);
+    else return false;
   }
-  if (state_.scene == Scene::Instrument)
-  {
-    const InstrumentPage* page = CurrentInstrumentPage();
-    if (page != nullptr)
-    {
-      const Slot& slot = page->slots[InstrumentFocus()];
-      if (slot.IsAction()) { RunSlotAction(slot.action); return; }
-    }
-  }
-  else if (state_.scene == Scene::Setup && CurrentPage() == kSetupProject)
-  {
-    // Native project action tiles are focused first, then explicitly confirmed.
-    // BPM and swing have no ENTER action; ADD/SUB edit their value.
-    if (state_.projectFocus != 4 && state_.projectFocus != 5) ProjectGrid(state_.projectFocus);
-    return;
-  }
-  else if (state_.scene == Scene::Tape && CurrentPage() == kTapeMix && nativeFocusedCell_ < kGridCount && nativeFocusedCell_ / kGridColumns != 0)
-  {
-    MixGrid(nativeFocusedCell_);
-    return;
-  }
-  else if (state_.scene == Scene::Tape && CurrentPage() == kTapeSession)
-  {
-    const std::size_t count = host_.Sequencer().PatternCount(state_.sessionTrack);
-    if (state_.sessionPattern > count) return;
-    if (host_.Sequencer().SongMode()) host_.Sequencer().SetSongMode(false);
-    const bool creating = state_.sessionPattern == count;
-    if (host_.Sequencer().QueuePattern(state_.sessionTrack, state_.sessionPattern))
-    {
-      if (creating) MarkDirty();
-      SelectTrack(state_.sessionTrack);
-    }
-    return;
-  }
-  else if (state_.scene == Scene::Tape && CurrentPage() == kTapeSong && state_.songRow == host_.Sequencer().SongLength())
-  {
-    auto& sequencer = host_.Sequencer();
-    synth::SongRow fresh{};
-    if (sequencer.SongLength() > 0) fresh = sequencer.SongRowAt(sequencer.SongLength() - 1);
-    else for (std::size_t track = 0; track < kTrackCount; ++track) fresh.patterns[track] = static_cast<std::int8_t>(sequencer.ActivePattern(track));
-    if (sequencer.InsertSongRow(state_.songRow, fresh)) MarkDirty();
-    return;
-  }
-  Enter();
+  else if (state_.scene == Scene::Instrument) InstrumentGrid(index);
+  else if (state_.scene == Scene::Setup && CurrentPage() == kSetupProject) ProjectGrid(index);
+  else if (state_.scene == Scene::Tape && CurrentPage() == kTapeMix) MixGrid(index);
+  else Enter();
+  return true;
 }
 
 bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
@@ -357,11 +309,14 @@ bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
   state_.now = nowMs;
   const auto index = command.index < 0 ? static_cast<std::size_t>(-1) : static_cast<std::size_t>(command.index);
   if (host_.Sampler().SavingTrack() >= 0 && command.kind != Kind::Cancel && command.kind != Kind::SideUp &&
-      command.kind != Kind::PerformanceUp && command.kind != Kind::PerformanceCancelAll)
+      command.kind != Kind::PerformanceUp && command.kind != Kind::PerformanceCancel && command.kind != Kind::PerformanceCancelAll)
   {
     ShowToast("SAVING - PLEASE WAIT");
     return false;
   }
+  if (command.kind != Kind::None && command.kind != Kind::PerformanceDown && command.kind != Kind::PerformanceUp &&
+      command.kind != Kind::PerformanceCancel && command.kind != Kind::PerformanceCancelAll && command.kind != Kind::Cancel)
+    UsePadEdits();
   switch (command.kind)
   {
     case Kind::None: return false;
@@ -370,6 +325,8 @@ bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
       return NativeNoteDown(static_cast<std::uint8_t>(index), static_cast<std::uint8_t>(command.value), command.velocity);
     case Kind::PerformanceUp:
       return index <= 255 && NativeNoteUp(static_cast<std::uint8_t>(index));
+    case Kind::PerformanceCancel:
+      return index <= 255 && NativeNoteUp(static_cast<std::uint8_t>(index), false);
     case Kind::PerformanceCancelAll:
       NativeReleasePerformance();
       return true;
@@ -382,7 +339,7 @@ bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
       nativeFocusedCell_ = 0xFF;
       return true;
     case Kind::Enter:
-      NativeEnter();
+      Enter();
       return true;
     case Kind::Context:
       if (const Modal* modal = TopModal(); modal != nullptr && (modal->kind == ModalKind::SampleBrowser || modal->kind == ModalKind::Record))
@@ -398,8 +355,7 @@ bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
       {
         const std::size_t row = role == KeyRole::Add ? 0 : role == KeyRole::Sub ? 1 : role == KeyRole::Enter ? 2 : 3;
         state_.keyPressedAt[KeyIndex(row, kColumns - 1)] = nowMs == 0 ? 1 : nowMs;
-        if (role == KeyRole::Enter && !OkDeferred()) NativeEnter();
-        else PressRight(role);
+        PressRight(role);
         return true;
       }
       if (role == KeyRole::Esc || role == KeyRole::Tab || role == KeyRole::Fn || role == KeyRole::Ctrl)
@@ -431,21 +387,15 @@ bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
       nativeFocusedCell_ = 0xFF;
       return true;
     case Kind::TextKey:
-    {
-      Modal* modal = Top();
-      if (modal == nullptr || modal->kind != ModalKind::TextEntry) return false;
-      auto& text = modal->text;
-      auto& cursor = modal->textCursor;
-      cursor = std::min(cursor, text.size());
-      if (command.index == -1 && cursor > 0) text.erase(--cursor, 1);
-      else if (command.index == -2 && cursor > 0) --cursor;
-      else if (command.index == -3 && cursor < text.size()) ++cursor;
-      else if (command.index == -4) { text.clear(); cursor = 0; }
-      else if (((command.index >= 'A' && command.index <= 'Z') || (command.index >= '0' && command.index <= '9') ||
-                command.index == '-' || (command.index == ' ' && cursor > 0)) && text.size() < modal->maxLength)
-        text.insert(cursor++, 1, static_cast<char>(command.index));
-      return true;
-    }
+      switch (command.index)
+      {
+        case -1: return EditText(TextInputAction::Backspace);
+        case -2: return EditText(TextInputAction::Left);
+        case -3: return EditText(TextInputAction::Right);
+        case -4: return EditText(TextInputAction::Clear);
+        default:
+          return command.index >= 0 && command.index <= 127 && EditText(TextInputAction::Insert, static_cast<char>(command.index));
+      }
     case Kind::Search:
       if (const Modal* modal = TopModal(); modal != nullptr &&
           (modal->kind == ModalKind::PresetBrowser || modal->kind == ModalKind::SampleBrowser))
@@ -463,10 +413,11 @@ bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
       SetPage(static_cast<std::uint8_t>(command.value));
       nativeFocusedCell_ = 0xFF;
       return true;
-    case Kind::RollWindow: return false; // viewport belongs to the display adapter
-    case Kind::RollLane:
-      if (TopModal() != nullptr || state_.scene != Scene::Sequence || CurrentPage() != 0) return false;
-      host_.Sequencer().CycleEditLane();
+    case Kind::SceneListScroll:
+    case Kind::RollPitch: return false; // only display scroll, never an edit
+    case Kind::SequencePage:
+      if (TopModal() != nullptr || state_.scene != Scene::Sequence || CurrentPage() != 0 || command.index == 0) return false;
+      FlipStepPage(command.index > 0 ? 1 : -1);
       return true;
     case Kind::RollNote:
     {
@@ -474,9 +425,13 @@ bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
       if (TopModal() != nullptr || state_.scene != Scene::Sequence || CurrentPage() != 0 ||
           index >= sequencer.TrackStepCount(state_.track) || command.value < 0 || command.value > 127) return false;
       const auto note = static_cast<std::uint8_t>(command.value);
+      if (DrumTrack() && std::find(kDrumNotes.begin(), kDrumNotes.end(), note) == kDrumNotes.end()) return false;
       if (!state_.keyboard.multiSelect) sequencer.ClearSelectedSteps();
       sequencer.SetStepSelected(index, true);
-      state_.noteLane[state_.track] = note;
+      const auto ui = sequencer.BuildUiState(state_.track);
+      sequencer.SetViewPage(state_.track, index / ui.viewStepCount);
+      if (DrumTrack()) state_.drumLane[state_.track] = static_cast<std::uint8_t>(std::find(kDrumNotes.begin(), kDrumNotes.end(), note) - kDrumNotes.begin());
+      else state_.noteLane[state_.track] = note;
       if (sequencer.ToggleStepNotes(state_.track, index, &note, 1)) MarkDirty();
       return true;
     }
@@ -492,10 +447,7 @@ bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
       nativeFocusedCell_ = 0xFF;
       return true;
     case Kind::FocusCell: return NativeFocusCell(index);
-    case Kind::ActivateCell:
-      if (!NativeFocusCell(index)) return false;
-      NativeEnter();
-      return true;
+    case Kind::ActivateCell: return ActivateCell(index);
     case Kind::SelectListRow:
       if (Modal* modal = Top())
       {
@@ -518,27 +470,26 @@ bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
     {
       if (TopModal() != nullptr || state_.scene != Scene::Sequence || CurrentPage() != 0 || index >= host_.Sequencer().TrackStepCount(state_.track)) return false;
       auto& sequencer = host_.Sequencer();
-      if (!state_.keyboard.multiSelect) sequencer.ClearSelectedSteps();
-      sequencer.SetStepSelected(index, true);
-      sequencer.SetViewPage(state_.track, index / kGridCount);
+      const auto ui = sequencer.BuildUiState(state_.track);
+      // Freeze follow before converting the absolute touch target to a key,
+      // so a clock tick cannot move the page between the two reads.
+      sequencer.SetViewPage(state_.track, index / ui.viewStepCount);
+      const auto cell = index - sequencer.ViewFirstStep(state_.track);
+      StepKeyPress(cell);
+      StepKeyRelease(cell);
       return true;
     }
     case Kind::SelectPattern:
     {
       if (TopModal() != nullptr || state_.scene != Scene::Sequence || CurrentPage() != 1 || index > host_.Sequencer().PatternCount(state_.track)) return false;
-      const bool creating = index == host_.Sequencer().PatternCount(state_.track);
-      if (!host_.Sequencer().QueuePattern(state_.track, index)) return false;
-      if (creating) MarkDirty();
+      SequenceGrid(index);
       return true;
     }
     case Kind::SelectSongCell:
       if (TopModal() != nullptr || state_.scene != Scene::Tape || CurrentPage() != kTapeSong || index > host_.Sequencer().SongLength() || index >= synth::kSongMaxRows || command.value < 0 || command.value >= static_cast<int>(kTrackCount)) return false;
-      if (state_.songRow == index && state_.songTrack == static_cast<std::size_t>(command.value)) state_.songLane ^= 1u;
-      else state_.songLane = 0;
-      state_.songRow = index;
-      state_.songTrack = static_cast<std::size_t>(command.value);
       if (index < state_.songScroll) state_.songScroll = index;
       if (index >= state_.songScroll + kGridColumns) state_.songScroll = index - kGridColumns + 1;
+      SongGrid(static_cast<std::size_t>(command.value) * kGridColumns + index - state_.songScroll);
       return true;
     case Kind::SelectSessionCell:
       if (TopModal() != nullptr || state_.scene != Scene::Tape || CurrentPage() != kTapeSession || index >= synth::kSequencerMaxPatternCount || command.value < 0 || command.value >= static_cast<int>(kTrackCount)) return false;

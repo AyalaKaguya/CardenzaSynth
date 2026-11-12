@@ -41,7 +41,7 @@ void DrawBootHandoff(Gfx& g, const Rect& bounds, Animator& animator);
 Rect GrowOverlay(Gfx& g, const Rect& content, const Rect& panel, const Rect& source, Color accent, float progress);
 Rect DropInTile(const Rect& rect, float progress, std::size_t order, int distance = 8);
 void DrawMapTile(Gfx& g, const Rect& rect, bool selected, bool usable, Color accent, std::uint32_t now,
-                  Color fill = theme::kInk);
+                  Color fill = theme::kInk, bool dottedOutline = false);
 struct BootStyle {
   Rect bounds{0, 0, 240, 135};
   int titleY = 40;

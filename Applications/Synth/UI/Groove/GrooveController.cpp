@@ -245,9 +245,11 @@ std::size_t Controller::CollectHeldNotes(std::array<std::uint8_t, kRows * kPadCo
   for (const auto& contact : nativeContacts_)
   {
     if (!contact.active || contact.track != state_.track) continue;
-    for (std::size_t voice = 0; voice < contact.count && count < notes.size(); ++voice)
+    const auto heldCount = contact.edit.active ? contact.edit.count : contact.count;
+    const auto& heldNotes = contact.edit.active ? contact.edit.notes : contact.notes;
+    for (std::size_t voice = 0; voice < heldCount && count < notes.size(); ++voice)
     {
-      const auto note = contact.notes[voice];
+      const auto note = heldNotes[voice];
       if (std::find(notes.begin(), notes.begin() + static_cast<std::ptrdiff_t>(count), note) == notes.begin() + static_cast<std::ptrdiff_t>(count))
         notes[count++] = note;
     }
@@ -688,10 +690,7 @@ void Controller::ReleasePad(std::size_t row, std::size_t column)
 #if defined(CARDENZA_NATIVE_UI)
   NativePublishPerformance();
 #endif
-  // A tap on a lit pad: its notes come out of the selected steps now. Holding it never took them out.
-  if (edit.active && edit.removeOnRelease && !edit.used && state_.padTrack[index] == state_.track && state_.scene == Scene::Sequence &&
-      CurrentPage() == 0 && TopModal() == nullptr && host_.Sequencer().ToggleNotesOnSelectedSteps(edit.notes.data(), edit.count, edit.velocity))
-    MarkDirty();
+  FinishPadEdit(edit, state_.padTrack[index]);
 }
 
 void Controller::PressGrid(std::size_t index)
@@ -770,55 +769,52 @@ void Controller::ReleaseGrid(std::size_t index)
   StepKeyRelease(index);
 }
 
-bool Controller::HandleTextKey(std::size_t row, std::size_t column)
+bool Controller::EditText(TextInputAction action, char value)
 {
   Modal* modal = Top();
-  if (modal == nullptr) return false;
-  std::string& text = modal->text;
-  std::size_t& cursor = modal->textCursor;
+  if (modal == nullptr || modal->kind != ModalKind::TextEntry) return false;
+  auto& text = modal->text;
+  auto& cursor = modal->textCursor;
   cursor = std::min(cursor, text.size());
+  switch (action)
+  {
+    case TextInputAction::Backspace: if (cursor > 0) text.erase(--cursor, 1); break;
+    case TextInputAction::Delete: if (cursor < text.size()) text.erase(cursor, 1); break;
+    case TextInputAction::Left: if (cursor > 0) --cursor; break;
+    case TextInputAction::Right: if (cursor < text.size()) ++cursor; break;
+    case TextInputAction::Start: cursor = 0; break;
+    case TextInputAction::End: cursor = text.size(); break;
+    case TextInputAction::Clear: text.clear(); cursor = 0; break;
+    case TextInputAction::Insert:
+      if (((value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9') || value == '-' || (value == ' ' && cursor > 0)) &&
+          text.size() < modal->maxLength) text.insert(cursor++, 1, value);
+      break;
+  }
+  return true;
+}
+
+bool Controller::HandleTextKey(std::size_t row, std::size_t column)
+{
+  const Modal* modal = Top();
+  if (modal == nullptr || modal->kind != ModalKind::TextEntry) return false;
   const char value = LegendChar(row, column);
-  // FN + key: the yellow keycap layer. , / move the cursor, ; . jump to the start / end, and the
-  // top-right "del" key deletes the character after the cursor.
   if (state_.left[LeftIndex(KeyRole::Fn)].down)
   {
     state_.left[LeftIndex(KeyRole::Fn)].used = true;
-    if (value == ',' && cursor > 0) --cursor;
-    else if (value == '/' && cursor < text.size()) ++cursor;
-    else if (value == ';') cursor = 0;
-    else if (value == '.') cursor = text.size();
-    else if (row == 0 && column == kColumns - 1 && cursor < text.size()) text.erase(cursor, 1);
+    if (value == ',') EditText(TextInputAction::Left);
+    else if (value == '/') EditText(TextInputAction::Right);
+    else if (value == ';') EditText(TextInputAction::Start);
+    else if (value == '.') EditText(TextInputAction::End);
+    else if (row == 0 && column == kColumns - 1) EditText(TextInputAction::Delete);
     return true;
   }
-  // The top-right key carries the "del" legend, so it erases whatever role it has elsewhere.
-  if (row == 0 && column == kColumns - 1)
-  {
-    if (cursor > 0)
-    {
-      text.erase(cursor - 1, 1);
-      --cursor;
-    }
-    return true;
-  }
+  if (row == 0 && column == kColumns - 1) return EditText(TextInputAction::Backspace);
   switch (RoleFor(row, column))
   {
-    case KeyRole::Enter:
-      CommitText();
-      return true;
-    case KeyRole::Add:
-    case KeyRole::Sub:
-    case KeyRole::Tab:
-    case KeyRole::Fn:
-    case KeyRole::Ctrl:
-      return true;
-    default:
-      break;
+    case KeyRole::Enter: CommitText(); return true;
+    case KeyRole::Add: case KeyRole::Sub: case KeyRole::Tab: case KeyRole::Fn: case KeyRole::Ctrl: return true;
+    default: return EditText(TextInputAction::Insert, value);
   }
-  const bool allowed = (value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9') || value == ' ' || value == '-';
-  if (!allowed) return true;
-  if (value == ' ' && cursor == 0) return true;
-  if (text.size() < modal->maxLength) text.insert(cursor++, 1, value);
-  return true;
 }
 
 bool Controller::HandleSearchKey(std::size_t row, std::size_t column)
@@ -902,6 +898,7 @@ void Controller::ReportAutosaveProblem(const std::string& text)
 void Controller::Tick(std::uint32_t nowMs)
 {
   state_.now = nowMs;
+  SyncSequenceViewport();
   OkTick();
   if (CellPickerActive()) ShowCellHud();
   if (synth::SynthSequencer::ConsumePatternMemoryFull()) ShowToast("MEMORY FULL - NOTE NOT WRITTEN", ToastKind::Error);

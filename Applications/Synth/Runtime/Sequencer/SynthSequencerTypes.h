@@ -227,6 +227,7 @@ struct SequencerUiState {
   // viewPageCount pages. currentStep and primaryHeldStep count from the start of the pattern.
   std::array<SequencerStepUiState, kSequencerStepCount> steps{};
   std::size_t firstViewStep = 0;
+  std::size_t viewStepCount = kSequencerStepCount;
   std::size_t viewPage = 0;
   std::size_t viewPageCount = 1;
   int primaryLowestNote = -1;

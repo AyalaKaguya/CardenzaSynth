@@ -72,8 +72,8 @@ private:
   std::array<PerformanceHit, 64> performanceHits_{};
   std::size_t performanceHitCount_ = 0;
   std::array<PerformancePointer, 2> performancePointers_{};
-  std::size_t rollFirstStep_ = 0;
   int rollLowNote_ = 48;
+  std::array<std::size_t, kSceneCount> sceneListScroll_{};
   Layer layer_ = Layer::None;
   Hit pressed_{};
   std::uint8_t pointerId_ = 0;

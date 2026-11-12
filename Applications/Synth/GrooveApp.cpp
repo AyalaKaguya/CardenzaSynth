@@ -195,6 +195,7 @@ void GrooveApp::Setup(const std::vector<std::string>& args)
   sequencer_.Stop();
   sequencer_.SetRecordArmed(false);
   sequencer_.ArpReleaseAll();
+  controller_.SetRollWindowSteps(8);
   RestoreNativeUi();
 #endif
   cardWasMounted_ = os::storage::CardMounted();

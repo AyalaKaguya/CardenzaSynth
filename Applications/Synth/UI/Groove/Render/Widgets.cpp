@@ -71,6 +71,7 @@ void ParamCell(Gfx& g, const Rect& rect, std::string_view label, std::string_vie
 {
   const int textX = rect.x + layout.paddingX;
   const int textWidth = rect.width - layout.paddingX - layout.rightPadding;
+  if (layout.dottedOutline) DottedFrame(g, rect, disabled ? kFaint : kDim);
   if (focused)
   {
     g.Fill(Rect{rect.x, rect.y, rect.width, layout.labelHeight}, kInk);
@@ -141,7 +142,7 @@ void ActionCell(Gfx& g, const Rect& rect, std::string_view label, std::string_vi
           rect.width - layout.padding * 2, detail, kBlack, layout.detailFont);
     return;
   }
-  DottedFrame(g, rect, available ? kFaint : kShade);
+  DottedFrame(g, rect, layout.strongOutline ? (available ? kDim : kFaint) : (available ? kFaint : kShade));
   const bool band = focused && layout.focusBandHeight > 0;
   if (band)
   {
