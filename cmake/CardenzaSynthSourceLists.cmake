@@ -25,8 +25,19 @@ function(cardenza_collect_synth_app_cpp_sources root_dir out_var)
     )
     cardenza_groove_ui_enabled(groove_ui)
     if(groove_ui)
+        set(native_ui_sources "")
+        if(CARDENZA_NATIVE_UI)
+            set(native_ui_sources
+                ${root_dir}/Applications/Synth/Runtime/Sampler/NativeSamplerJobs.cpp
+                ${root_dir}/Applications/Synth/UI/Groove/Native/NativeActions.cpp
+                ${root_dir}/Applications/Synth/UI/Groove/Native/NativeView.cpp
+                ${root_dir}/Applications/Synth/UI/Groove/Native/NativeScenes.cpp
+                ${root_dir}/Applications/Synth/UI/Groove/Native/NativeModals.cpp
+            )
+        endif()
         set(${out_var}
             ${runtime_sources}
+            ${native_ui_sources}
             ${root_dir}/Applications/Synth/GrooveApp.cpp
             ${root_dir}/Applications/Synth/GrooveAppGuide.cpp
             ${root_dir}/Applications/Synth/StressTest.cpp

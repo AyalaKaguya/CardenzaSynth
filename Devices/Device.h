@@ -11,8 +11,13 @@ namespace Device {
 
 namespace Display {
 
+#if defined(CARDENZA_NATIVE_UI)
+inline constexpr int kWidth = 480;
+inline constexpr int kHeight = 480;
+#else
 inline constexpr int kWidth = 240;
 inline constexpr int kHeight = 135;
+#endif
 inline constexpr std::size_t kPixelCount = static_cast<std::size_t>(kWidth) * static_cast<std::size_t>(kHeight);
 
 using Pixel = std::uint16_t;
@@ -49,6 +54,22 @@ void SetBacklight(std::uint8_t level);
 std::uint8_t Backlight();
 
 }  // namespace Display
+
+namespace Touch {
+enum class Kind : std::uint8_t { Down, Move, Up, Cancel };
+struct Event {
+  Kind kind = Kind::Cancel;
+  std::uint8_t id = 0;
+  std::int16_t x = 0;
+  std::int16_t y = 0;
+};
+#if defined(CARDENZA_NATIVE_UI)
+// Polled by the system owner. Drivers and remote input enqueue only; they do
+// not enter the app or retain pointers to its UI state.
+bool Poll(Event& event);
+void CancelAll();
+#endif
+}  // namespace Touch
 
 namespace Keyboard {
 

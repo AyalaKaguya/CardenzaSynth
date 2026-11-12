@@ -143,7 +143,7 @@ void QuickSave()
 
 // No card at the start: the whole run makes no card operation, even after a card goes in, and the
 // screen says that nothing will be saved.
-void TestNoCardBoot(const fs::path& root)
+void TestNoCardBoot(const fs::path& root, bool volatileSession = false)
 {
   const fs::path card = root / "sdcard";
   const fs::path product = card / "CardenzaSynth";
@@ -158,13 +158,33 @@ void TestNoCardBoot(const fs::path& root)
   CardenzaSim::Input::SetCardInserted(false);
   RegisterBlankApp();
   os::system::UseClock(&FakeClock);
-  assert(os::system::Begin());
+  os::system::BootOptions boot;
+  if (volatileSession) boot.applicationArgs.emplace_back("--volatile-session");
+  assert(os::system::Begin(boot));
   assert(os::storage::CardMissingThisRun() && !os::storage::CardPresent() && !os::storage::CardMounted());
   auto* groove = &Groove();
   // The defaults, not the card's.
   assert(groove->MasterVolume() == os::storage::kDefaultOutputVolume && groove->LedBrightness() == os::storage::kDefaultKeyLedBrightness);
   assert(!groove->Ui().Settings().keyboard.multiSelect && groove->Ui().State().projectName.empty());
   assert(!groove->QuerySystem().storageReady);
+
+  // A deliberate volatile host with no keyboard can show the original UI
+  // without a modal to dismiss. It must still refuse storage for the whole run.
+  if (volatileSession)
+  {
+    assert(groove->Ui().TopModal() == nullptr);
+    Frames(static_cast<int>(groove::kBootMs / 16) + 120);
+    assert(groove->Ui().TopModal() == nullptr && os::storage::CardMissingThisRun());
+    CardenzaSim::Input::SetCardInserted(true);
+    Frames(700);
+    assert(!os::storage::CardMounted());
+    assert(groove->ListProjects().empty());
+    groove->FlushSession();
+    os::system::Shutdown();
+    assert(Snapshot(card) == before && !fs::exists(root / "internal"));
+    std::cout << "Volatile no-card boot passed\n";
+    return;
+  }
 
   // The notice is there at the start and still there after the boot animation, until ENTER.
   const auto notice = [&]() {
@@ -239,9 +259,9 @@ int main(int argc, char** argv)
     std::cerr << "Lifecycle tests require an isolated card under their temporary working directory\n";
     return 1;
   }
-  if (argc == 2 && std::string(argv[1]) == "--no-card")
+  if (argc == 2 && (std::string(argv[1]) == "--no-card" || std::string(argv[1]) == "--volatile-no-card"))
   {
-    TestNoCardBoot(root);
+    TestNoCardBoot(root, std::string(argv[1]) == "--volatile-no-card");
     fs::current_path(fs::temp_directory_path());
     fs::remove_all(root);
     return 0;

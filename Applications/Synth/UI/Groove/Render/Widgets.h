@@ -15,6 +15,25 @@ Rect CellSpan(std::size_t row, std::size_t column, std::size_t rows, std::size_t
 
 enum class CellStyle : std::uint8_t { Normal, Focused, Disabled };
 
+struct ParamCellLayout {
+  int paddingX = 3;
+  int rightPadding = 2;
+  int labelY = 2;
+  int labelHeight = 10;
+  int valueY = 12;
+  int barBottom = 2;
+  int barHeight = 2;
+  Font labelFont = Font::Micro;
+  Font valueFont = Font::Small;
+};
+// Different display sizes use the original cell painter with explicit metrics.
+// Focus and availability are independent, including a focused unavailable slot.
+void ParamCell(Gfx& g, const Rect& rect, std::string_view label, std::string_view value, float fraction,
+               bool focused, bool disabled, const ParamCellLayout& layout);
+void ParamCell(Gfx& g, const Rect& rect, std::string_view label, std::string_view value, float fraction,
+               bool focused, bool disabled, const ParamCellLayout& layout, float flash, std::uint32_t now, bool ants = true);
+void DottedFrame(Gfx& g, const Rect& rect, Color color);
+
 // Parameter cell: label, value text and a dithered level bar for `fraction` (negative = no bar).
 void ParamCell(Gfx& g, const Rect& rect, std::string_view label, std::string_view value, float fraction, CellStyle style);
 // Animated variant: `flash` (1 -> 0) pops the value after an edit; a focused cell gets marching ants.
@@ -22,6 +41,17 @@ void ParamCell(Gfx& g, const Rect& rect, std::string_view label, std::string_vie
                float flash, std::uint32_t now, bool ants = true);
 // Action cell: label with an arrow, dotted outline.
 void ActionCell(Gfx& g, const Rect& rect, std::string_view label, bool pressed, Color accent);
+struct ActionCellLayout {
+  Font labelFont = Font::Micro;
+  Font detailFont = Font::Micro;
+  int padding = 4;
+  int labelY = -1;
+  int detailBottom = 0;
+  int focusBandHeight = 0;
+};
+void ActionCell(Gfx& g, const Rect& rect, std::string_view label, std::string_view detail,
+                bool focused, bool pressed, bool available, Color accent, const ActionCellLayout& layout,
+                float flash = 0.0f, std::uint32_t now = 0);
 // Horizontal dithered level bar.
 void LevelBar(Gfx& g, const Rect& rect, float fraction, Color on, Color off);
 // Vertical dithered fader.
@@ -37,8 +67,9 @@ void OscillatorScope(Gfx& g, const Rect& rect, bool saw, float pulseWidth, float
                      float phase = 0.0f);
 void Waveform(Gfx& g, const Rect& rect, const float* bins, std::size_t count, float start, float end, float cursor, bool cursorVisible);
 // With `activity` > 0 signal dots flow along the routing toward the carriers.
+// Scale 1 preserves the compact screen; larger nodes use a centred tree layout.
 void Dx7Algorithm(Gfx& g, const Rect& rect, int algorithm, int highlightOperator, int feedback, float activity = 0.0f,
-                  std::uint32_t now = 0);
+                  std::uint32_t now = 0, int scale = 1);
 
 // True when `op` (1..6) is a carrier in DX7 `algorithm` (1..32).
 bool Dx7IsCarrier(int algorithm, int op);

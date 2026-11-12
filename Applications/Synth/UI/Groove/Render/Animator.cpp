@@ -68,6 +68,86 @@ float Animator::Smooth(std::uint32_t key, float target, float timeConstantMs)
   return slot->value;
 }
 
+#if defined(CARDENZA_NATIVE_UI)
+void Animator::NotifyCellPress(std::size_t index, std::uint32_t now)
+{
+  if (index < gridPressedAt_.size()) gridPressedAt_[index] = std::max(gridPressedAt_[index], now == 0 ? 1 : now);
+  NotifyInput(now);
+}
+
+void Animator::NotifyPerformanceNote(std::size_t track, const std::uint8_t* notes, std::size_t count,
+                                     std::uint8_t velocity, std::uint32_t now)
+{
+  NotifyInput(now);
+  if (track != track_ || notes == nullptr || count == 0) return;
+  const auto at = now == 0 ? 1 : now;
+  for (std::size_t index = 0; index < count; ++index)
+  {
+    const auto note = notes[index];
+    if (note >= noteHitAt_.size()) continue;
+    noteHitAt_[note] = std::max(noteHitAt_[note], at);
+    if (nativeDrumTrack_)
+      for (std::size_t lane = 0; lane < kDrumNotes.size(); ++lane)
+        if (kDrumNotes[lane] == note && at >= drumHits_[lane].at)
+          drumHits_[lane] = DrumHit{at, static_cast<std::uint8_t>(DrumRowForVelocity(velocity)), velocity};
+  }
+  lastNoteAt_ = std::max(lastNoteAt_, at);
+}
+
+void Animator::NotifyOverlay(std::size_t index, bool active, std::uint32_t now)
+{
+  if (index >= overlay_.size()) return;
+  const auto at = now == 0 ? 1 : now;
+  if (active) overlayAt_[index] = at;
+  else overlayClosedAt_[index] = at;
+  NotifyInput(now);
+}
+
+void Animator::NotifyInput(std::uint32_t now)
+{
+  if (now != 0) lastInputAt_ = std::max(lastInputAt_, now);
+}
+
+void Animator::ConsumeNativePresentation(const Controller& controller)
+{
+  const auto& events = controller.NativePresentation();
+  const auto& state = controller.State();
+  const auto modal = static_cast<std::uint8_t>(controller.TopModal() == nullptr ? ModalKind::None : controller.TopModal()->kind);
+  std::uint8_t overlayMask = 0;
+  for (std::size_t index = 0; index < events.overlays.size(); ++index)
+    if (events.overlays[index]) overlayMask |= static_cast<std::uint8_t>(1u << index);
+  // The bounded ring intentionally keeps the latest events after a long UI
+  // stall. Each note event retains its whole chord, including a one-tick tap.
+  const auto available = std::min<std::uint64_t>(events.serial - std::min(events.serial, nativePresentationSerial_), events.history.size());
+  const auto first = events.serial - available;
+  for (auto serial = first + 1; serial <= events.serial; ++serial)
+  {
+    const auto& event = events.history[(serial - 1) % events.history.size()];
+    if (event.serial != serial) continue;
+    switch (event.kind)
+    {
+      case NativePresentationKind::CellPress:
+        // A press on an outgoing page or modal must not flash a cell in the
+        // new view if navigation completed before this animation update.
+        if (event.scene == state.scene && event.page == controller.CurrentPage() && event.track == state.track &&
+            event.modal == modal && event.overlayMask == overlayMask) NotifyCellPress(event.index, event.at);
+        break;
+      case NativePresentationKind::PerformanceNote:
+        NotifyPerformanceNote(event.track, event.notes.data(), event.count, event.velocity, event.at);
+        break;
+      case NativePresentationKind::Overlay:
+        NotifyOverlay(event.index, event.active, event.at);
+        break;
+    }
+  }
+  nativePresentationSerial_ = events.serial;
+  NotifyInput(events.lastInputAt);
+  // Physical overlays and touch maps can coexist as presentation sources.
+  const std::array<bool, 4> physical{{controller.EscOverlay(), controller.TabOverlay(), controller.FnOverlay(), controller.CtrlOverlay()}};
+  for (std::size_t index = 0; index < overlay_.size(); ++index) overlay_[index] = physical[index] || events.overlays[index];
+}
+#endif
+
 void Animator::Update(const Controller& controller, std::uint32_t now)
 {
   const UiState& state = controller.State();
@@ -77,6 +157,9 @@ void Animator::Update(const Controller& controller, std::uint32_t now)
   const float dt = lastFrame_ == 0 ? 16.0f : static_cast<float>(std::min<std::uint32_t>(now - lastFrame_, 100));
   lastFrame_ = now;
   now_ = now;
+#if defined(CARDENZA_NATIVE_UI)
+  nativeDrumTrack_ = host.EngineKind(state.track) == synth::SynthEngineKind::Drums;
+#endif
 
   if (!primed_)
   {
@@ -95,6 +178,9 @@ void Animator::Update(const Controller& controller, std::uint32_t now)
     fingerprintTrack_ = state.track;
     fingerprintPattern_ = seq.activePattern;
     for (std::size_t step = 0; step < kGridCount; ++step) fingerprints_[step] = seq.steps[step].contentFingerprint;
+#if defined(CARDENZA_NATIVE_UI)
+    ConsumeNativePresentation(controller);
+#endif
     return;
   }
 
@@ -163,7 +249,10 @@ void Animator::Update(const Controller& controller, std::uint32_t now)
   else textLength_ = 0;
   modalDepth_ = depth;
   modalKind_ = kind;
-  const std::array<bool, 4> overlay{{controller.EscOverlay(), controller.TabOverlay(), controller.FnOverlay(), controller.CtrlOverlay()}};
+  std::array<bool, 4> overlay{{controller.EscOverlay(), controller.TabOverlay(), controller.FnOverlay(), controller.CtrlOverlay()}};
+#if defined(CARDENZA_NATIVE_UI)
+  for (std::size_t index = 0; index < overlay.size(); ++index) overlay[index] = overlay[index] || controller.NativePresentation().overlays[index];
+#endif
   for (std::size_t index = 0; index < overlay.size(); ++index)
   {
     if (overlay[index] && !overlay_[index]) overlayAt_[index] = now;
@@ -307,6 +396,9 @@ void Animator::Update(const Controller& controller, std::uint32_t now)
     meterPeak_[track] = std::max(activity, meterPeak_[track] - dt * 0.0012f);
   }
   outputPeak_ = std::max(host.OutputPeak(), outputPeak_ - dt * 0.0008f);
+#if defined(CARDENZA_NATIVE_UI)
+  ConsumeNativePresentation(controller);
+#endif
 }
 
 void Animator::DecorateLeds(const Controller& controller, const LedFrame& frame, std::array<std::uint8_t, kKeyCount>& levels) const
@@ -400,8 +492,14 @@ void Animator::DecorateLeds(const Controller& controller, const LedFrame& frame,
   // so the strips on screen (which mirror these keys) read as the keys beside them.
   std::uint32_t lastPress = 0;
   for (const std::uint32_t pressed : state.keyPressedAt) lastPress = std::max(lastPress, pressed);
+#if defined(CARDENZA_NATIVE_UI)
+  lastPress = std::max(lastPress, lastInputAt_);
+#endif
   bool leftHeld = false;
   for (const auto& key : state.left) leftHeld = leftHeld || key.down;
+#if defined(CARDENZA_NATIVE_UI)
+  for (const bool overlay : overlay_) leftHeld = leftHeld || overlay;
+#endif
   if (primed_ && now - bootAt_ >= kBootMs && !leftHeld && now - lastPress >= kEdgeSweepIdleMs)
   {
     const std::uint32_t phase = (now - bootAt_) % kEdgeSweepPeriodMs;

@@ -1,6 +1,9 @@
 #pragma once
 
 #include <array>
+#if defined(CARDENZA_NATIVE_UI)
+#include <bitset>
+#endif
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -14,6 +17,9 @@
 #include "Applications/Synth/UI/Groove/GrooveController.h"
 #include "Applications/Synth/UI/Groove/GrooveHost.h"
 #include "Applications/Synth/UI/Groove/Render/Animator.h"
+#if defined(CARDENZA_NATIVE_UI)
+#include "Applications/Synth/UI/Groove/Native/NativeView.h"
+#endif
 
 namespace apps {
 
@@ -37,6 +43,9 @@ public:
   void UpdateLeds() override;
   void RenderFrame() override;
   void HandleMatrixKeyEvent(std::size_t row, std::size_t column, bool pressed) override;
+#if defined(CARDENZA_NATIVE_UI)
+  void HandleTouchEvent(const Device::Touch::Event& event) override;
+#endif
   std::uint32_t EndedOrphanNotes() const { return endedOrphanNotes_; }
   std::uint32_t loggedShedVoices_ = 0;
 
@@ -100,6 +109,12 @@ public:
       synth::SynthEngineKind::Drums, synth::SynthEngineKind::Juno, synth::SynthEngineKind::Dx7, synth::SynthEngineKind::Sampler}};
 
 private:
+  void RegisterInputActivity(std::uint32_t now);
+  bool InputHeld() const;
+#if defined(CARDENZA_NATIVE_UI)
+  void RestoreNativeUi();
+  void StoreNativeUi();
+#endif
   void ReadComputerMidi();
   // The guide (GrooveAppGuide.cpp): a lesson page on the computer sets the working state aside in a
   // practice project, drives the device and follows what is pressed.
@@ -182,6 +197,9 @@ private:
   bool autosaveFailureShown_ = false;
   bool cardWasMounted_ = false;
   int keysHeld_ = 0;
+#if defined(CARDENZA_NATIVE_UI)
+  std::bitset<256> nativeTouchIds_;
+#endif
   std::array<std::string, synth::kSynthTrackCount> pendingSamples_;
   std::uint32_t lastKeyAt_ = 0;
   void EndOrphanNotes(std::uint32_t now);
@@ -215,6 +233,14 @@ private:
   synth::SynthSequencer sequencer_;
   groove::Controller controller_;
   groove::Animator animator_;
+#if defined(CARDENZA_NATIVE_UI)
+  groove::native::View nativeView_;
+  bool nativeUiStored_ = false;
+  groove::Scene nativeStoredScene_ = groove::Scene::Instrument;
+  groove::Scene nativeStoredPreviousScene_ = groove::Scene::Sequence;
+  std::size_t nativeStoredTrack_ = synth::kDefaultActiveTrack;
+  std::array<std::uint8_t, groove::kSceneCount> nativeStoredPages_{};
+#endif
   std::array<std::uint8_t, synth::kSynthTrackCount> levels_{{100, 100, 100, 100}};
   std::array<bool, synth::kSynthTrackCount> muted_{};
   std::array<bool, synth::kSynthTrackCount> soloed_{};

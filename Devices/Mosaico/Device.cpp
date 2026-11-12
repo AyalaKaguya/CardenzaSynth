@@ -2,6 +2,9 @@
 #include "Devices/LedFrameBuffer.h"
 #include "Devices/Mosaico/DevicePlatform.h"
 #include "Devices/Mosaico/ScreenCapture.h"
+#if defined(CARDENZA_NATIVE_UI)
+#include "Devices/MosaicoNative/TouchBackend.h"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -43,12 +46,32 @@ bool displayFault = false;
 std::atomic<bool> displayReady{false};
 std::atomic<bool> displayHealthy{false};
 std::atomic<std::uint8_t> backlightLevel{Device::Display::kDefaultBacklight};
+#if defined(CARDENZA_NATIVE_UI)
+constexpr int kDirtyTileWidth = 32;
+constexpr int kDirtyColumns = Device::Display::kWidth / kDirtyTileWidth;
+constexpr int kDirtyRows = (Device::Display::kHeight + kTransferLines - 1) / kTransferLines;
+std::array<std::uint32_t, kDirtyColumns * kDirtyRows> shownHashes{};
+bool shownFrame = false;
+std::uint32_t presentCount = 0;
+std::uint32_t TileHash(const Device::Display::Pixel* pixels, int x, int lines)
+{
+  std::uint32_t hash = 2166136261u;
+  for (int y = 0; y < lines; ++y)
+    for (int i = 0; i < kDirtyTileWidth; ++i)
+      hash = (hash ^ pixels[y * Device::Display::kWidth + x + i]) * 16777619u;
+  return hash;
+}
+#endif
 
 Device::Keyboard::MatrixKeyState keyboardState{};
 Device::LED::detail::LedFrameBuffer keyboardLedFrames;
 
 using BackgroundJob = void (*)();
+#if defined(CARDENZA_NATIVE_UI)
+constexpr std::size_t kBackgroundJobCount = 8;
+#else
 constexpr std::size_t kBackgroundJobCount = 4;
+#endif
 std::array<BackgroundJob, kBackgroundJobCount> backgroundJobs{};
 portMUX_TYPE backgroundLock = portMUX_INITIALIZER_UNLOCKED;
 TaskHandle_t backgroundTask = nullptr;  // Created/queried only by the system task.
@@ -127,6 +150,34 @@ void Present()
     for (int row = 0; row < kHeight; row += kTransferLines)
     {
       const int lines = std::min(kTransferLines, kHeight - row);
+#if defined(CARDENZA_NATIVE_UI)
+      const Pixel* source = framePixels + static_cast<std::size_t>(row) * kWidth;
+      std::array<std::uint32_t, kDirtyColumns> hashes{};
+      int first = kDirtyColumns;
+      int last = -1;
+      for (int column = 0; column < kDirtyColumns; ++column)
+      {
+        hashes[column] = TileHash(source, column * kDirtyTileWidth, lines);
+        if (!shownFrame || hashes[column] != shownHashes[(row / kTransferLines) * kDirtyColumns + column] ||
+            (presentCount % 1800u == 0))
+        {
+          first = std::min(first, column);
+          last = column;
+        }
+      }
+      if (last < first) continue;
+      const int x = first * kDirtyTileWidth;
+      const int width = (last - first + 1) * kDirtyTileWidth;
+      for (int y = 0; y < lines; ++y)
+        for (int column = 0; column < width; ++column)
+        {
+          const Pixel value = source[y * kWidth + x + column];
+          transferPixels[y * width + column] = static_cast<Pixel>((value << 8) | (value >> 8));
+        }
+      if (!SendTransfer(x, row, width, lines)) break;
+      for (int column = first; column <= last; ++column)
+        shownHashes[(row / kTransferLines) * kDirtyColumns + column] = hashes[column];
+#else
       const std::size_t count = static_cast<std::size_t>(lines) * kWidth;
       const Pixel* source = framePixels + static_cast<std::size_t>(row) * kWidth;
       for (std::size_t pixel = 0; pixel < count; ++pixel)
@@ -135,10 +186,15 @@ void Present()
         transferPixels[pixel] = static_cast<Pixel>((value << 8) | (value >> 8));
       }
       if (!SendTransfer(kImageLeft, kImageTop + row, kWidth, lines)) break;
+#endif
     }
     if (!displayFault)
     {
       displayHealthy.store(true, std::memory_order_release);
+#if defined(CARDENZA_NATIVE_UI)
+      shownFrame = true;
+      ++presentCount;
+#endif
       mosaico::capture::FramePresented(CurrentFrameBuffer());
     }
   }
@@ -195,6 +251,7 @@ bool ReadAppMessage(AppMessage& message) { message.length = 0; return false; }
 bool WriteAppMessage(const char*, std::size_t) { return false; }
 }  // namespace USB
 
+#if !defined(CARDENZA_NATIVE_UI)
 namespace Storage {
 std::string RootPath() { return "/nand/apps"; }
 bool Mount() { return false; }
@@ -203,6 +260,7 @@ void CheckAfterIoError() {}
 std::uint64_t CapacityBytes() { return 0; }
 std::uint64_t FreeBytes() { return 0; }
 }  // namespace Storage
+#endif
 
 // Console logging remains available; there is no pretend persistent log ring
 // while this backend deliberately has no filesystem mounted.
@@ -255,8 +313,10 @@ bool Init()
   if (framePixels == nullptr)
   {
     framePixels = static_cast<Display::Pixel*>(heap_caps_calloc(Display::kPixelCount, sizeof(Display::Pixel), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+#if !defined(CARDENZA_NATIVE_UI)
     if (framePixels == nullptr)
       framePixels = static_cast<Display::Pixel*>(heap_caps_calloc(Display::kPixelCount, sizeof(Display::Pixel), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+#endif
   }
   if (transferPixels == nullptr)
     transferPixels = static_cast<Display::Pixel*>(heap_caps_malloc(kTransferPixels * sizeof(Display::Pixel), MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT));
@@ -286,6 +346,13 @@ bool Init()
   }
   if (!ClearPhysicalDisplay()) return false;
   displayReady.store(true, std::memory_order_release);
+#if defined(CARDENZA_NATIVE_UI)
+  if (!mosaico::touch::Init())
+  {
+    ESP_LOGE(kTag, "native touch initialization failed; management remains available");
+    return false;
+  }
+#endif
   const esp_err_t captureResult = mosaico::capture::Init();
   if (captureResult != ESP_OK) ESP_LOGW(kTag, "Iris screenshot unavailable: %s", esp_err_to_name(captureResult));
   ESP_LOGI(kTag, "display %dx%d, native %dx%d image at (%d,%d); input/storage unavailable",

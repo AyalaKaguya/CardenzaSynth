@@ -13,6 +13,10 @@ namespace {
 
 std::array<Device::Display::Pixel, Device::Display::kPixelCount> frameBuffer{};
 Device::Keyboard::MatrixKeyState keyboardState{};
+#if defined(CARDENZA_NATIVE_UI)
+std::mutex touchMutex;
+std::deque<Device::Touch::Event> touchEvents;
+#endif
 bool homeButtonPressed = false;
 Device::LED::detail::LedFrameBuffer keyboardLedFrames;
 bool audioInputEnabled = false;
@@ -314,3 +318,34 @@ bool Init() {
 void Start() {}
 
 }  // namespace Device
+
+#if defined(CARDENZA_NATIVE_UI)
+namespace CardenzaSim::Input {
+void SendTouch(const Device::Touch::Event& event)
+{
+  std::lock_guard<std::mutex> lock(touchMutex);
+  if (touchEvents.size() >= 32)
+  {
+    touchEvents.clear();
+    touchEvents.push_back({Device::Touch::Kind::Cancel, 255, 0, 0});
+  }
+  touchEvents.push_back(event);
+}
+}
+namespace Device::Touch {
+bool Poll(Event& event)
+{
+  std::lock_guard<std::mutex> lock(touchMutex);
+  if (touchEvents.empty()) return false;
+  event = touchEvents.front();
+  touchEvents.pop_front();
+  return true;
+}
+void CancelAll()
+{
+  std::lock_guard<std::mutex> lock(touchMutex);
+  touchEvents.clear();
+  touchEvents.push_back({Kind::Cancel, 255, 0, 0});
+}
+}
+#endif

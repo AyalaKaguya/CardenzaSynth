@@ -3,6 +3,9 @@
 #include "Applications/Synth/Runtime/Sampler/SamplerTrackState.h"
 #include "Library/Synth/Core/SynthTypes.h"
 #include "Library/Synth/Audio/SynthAudioRuntime.h"
+#if defined(CARDENZA_NATIVE_UI)
+#include "Applications/Synth/Runtime/Sampler/NativeSamplerJobs.h"
+#endif
 
 #include <array>
 #include <chrono>
@@ -62,6 +65,9 @@ public:
   bool Previewing(std::size_t trackIndex) const;
   // The track the microphone is recording for, -1 when it is off.
   int RecordingTrack() const { return activeRecordingTrack_; }
+#if defined(CARDENZA_NATIVE_UI)
+  int SavingTrack() const { return nativeSavingTrack_; }
+#endif
   bool ConsumeTrimReset(std::size_t trackIndex);
   static bool ValidateSampleReference(std::string_view id);
   static bool PrepareSample(std::string_view id, PreparedSample& sample);
@@ -77,6 +83,16 @@ private:
     std::int32_t recordBinPeak = 0;
     std::size_t recordBinFrames = 0;
     std::size_t recordSyncedFrames = 0;
+#if defined(CARDENZA_NATIVE_UI)
+    // Capture the whole take's overview as it arrives. Up to 1,024 fine peak
+    // buckets cover its capacity, without a stop-time NAND scan.
+    static constexpr std::size_t kNativePeakBuckets = 1024;
+    std::array<std::uint16_t, kNativePeakBuckets> recordedPeaks{};
+    std::size_t recordedPeakSpan = 0;
+    bool recordedPeaksValid = false;
+    std::shared_ptr<native::SampleWaveJob> waveformJob;
+    std::string waveformPath;
+#endif
     bool takeOnCard = false;
     audio::SharedSampleBuffer currentFrames;
     std::uint32_t currentSampleRate = audio::kSampleRate;
@@ -99,6 +115,15 @@ private:
   // The take file of the running recording, finished into a sample when `keep`.
   void CloseTakeFile(TrackState& state, bool keep);
   void RemoveTakeFile(std::size_t trackIndex);
+#if defined(CARDENZA_NATIVE_UI)
+  void PollNativeSave();
+  void BuildNativeWave(TrackState& state, const audio::SharedSampleBuffer& frames,
+                       const std::string& path, std::uint32_t rate);
+  std::shared_ptr<native::SampleSaveJob> nativeSaveJob_;
+  int nativeSavingTrack_ = -1;
+  std::string nativeSavedName_;
+  std::array<float, kSamplerWaveformBinCount> nativeSavedWave_{};
+#endif
 
   std::array<TrackState, kSynthTrackCount> tracks_{};
   int activeRecordingTrack_ = -1;

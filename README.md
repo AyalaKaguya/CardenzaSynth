@@ -59,5 +59,7 @@ make web-serve
 - [固件构建与烧录](Devices/Cardenza/README.md)
 - [桌面模拟器、截图与测试](Devices/CardenzaSim/README.md)
 - [浏览器模拟器](Devices/CardenzaWeb/README.md)
+- [ESP-Mosaico 最小移植](Devices/Mosaico/README.md)
+- [ESP-Mosaico 原生界面与业务分层](Devices/MosaicoNative/README.md)
 - [开发规则与设计](AGENT.md)
 - [Demo 生成工具](tools/demo/README.md)

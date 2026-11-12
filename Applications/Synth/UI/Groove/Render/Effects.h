@@ -17,6 +17,11 @@ float EaseOutBack(float t);
 float Progress(std::uint32_t now, std::uint32_t start, std::uint32_t duration);
 // Decays from 1 to 0 over `duration` ms after `start` (0 when start is 0).
 float Decay(std::uint32_t now, std::uint32_t start, std::uint32_t duration);
+// Shared synth graph motion: phases keep advancing even while no notes sound.
+float OscillatorPhase(std::uint32_t now, float activity);
+float LfoPhase(std::uint32_t now, float rate);
+float FilterShimmer(std::uint32_t now, float activity);
+float OperatorLevelFlicker(std::uint32_t now, float activity, int op);
 // Deterministic per-frame noise.
 std::uint32_t Hash(std::uint32_t value);
 

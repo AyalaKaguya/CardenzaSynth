@@ -244,80 +244,7 @@ void DrawHeader(Gfx& g, const Controller& controller, Animator& animator)
 // arrows where more pages continue, and a counter (current / total) on the right.
 void DrawTabs(Gfx& g, const Controller& controller, Animator& animator)
 {
-  const UiState& state = controller.State();
-  const std::size_t count = controller.PageCount(state.scene);
-  const std::size_t current = std::min<std::size_t>(controller.CurrentPage(), count - 1);
-  std::vector<std::string> tabs;
-  std::vector<int> widths;
-  int total = 0;
-  for (std::size_t page = 0; page < count; ++page)
-  {
-    tabs.push_back(controller.PageTab(state.scene, page));
-    widths.push_back(Gfx::Measure(tabs.back()) + 7);
-    total += widths.back();
-  }
-  std::size_t first = 0;
-  std::size_t last = count - 1;
-  int left = kFooterX;
-  int right = kFooterRight;
-  // A long pattern: which of its pages the GRID shows, yellow once flipped by hand.
-  const bool stepPages = controller.State().scene == Scene::Sequence && current == 0;
-  if (stepPages)
-  {
-    const auto seq = controller.HostView().Sequencer().BuildUiState(controller.State().track);
-    if (seq.viewPageCount > 1)
-    {
-      const std::string pages = std::to_string(seq.viewPage + 1) + "/" + std::to_string(seq.viewPageCount);
-      g.Text(kFooterRight - Gfx::Measure(pages), kFooterY, pages, seq.viewFollow ? kDim : kFn);
-      right -= Gfx::Measure(pages) + 6;
-    }
-  }
-  if (total > right - left)
-  {
-    char counter[24];
-    std::snprintf(counter, sizeof(counter), "%02u/%02u", static_cast<unsigned>(current + 1), static_cast<unsigned>(count));
-    g.Text(right - Gfx::Measure(counter), kFooterY, counter, kFaint);
-    right -= Gfx::Measure(counter) + 9;
-    // Grow the window from the current tab, alternating right and left, while it fits. Room for
-    // the "<" is kept only when tabs are hidden on the left: the first tab stays flush left.
-    auto grow = [&]() {
-      first = last = current;
-      int used = widths[current];
-      for (bool grew = true; grew;)
-      {
-        grew = false;
-        if (last + 1 < count && used + widths[last + 1] <= right - left) { used += widths[++last]; grew = true; }
-        if (first > 0 && used + widths[first - 1] <= right - left) { used += widths[--first]; grew = true; }
-      }
-    };
-    grow();
-    if (first > 0)
-    {
-      left = kFooterX + 7;
-      grow();
-    }
-    if (first > 0) g.Text(kFooterX, kFooterY, "<", kCtrl);
-    if (last + 1 < count) g.Text(right + 2, kFooterY, ">", kCtrl);
-  }
-  std::vector<int> positions(count, 0);
-  int x = left;
-  for (std::size_t page = first; page <= last; ++page)
-  {
-    positions[page] = x;
-    x += widths[page];
-  }
-  // The violet highlight glides to the current tab.
-  const std::uint32_t key = Animator::Key("tabs", static_cast<std::uint32_t>(state.scene) * 7 + static_cast<std::uint32_t>(state.track));
-  const float boxX = animator.Smooth(key, static_cast<float>(positions[current] - 2), 55.0f);
-  const float boxW = animator.Smooth(key + 1, static_cast<float>(Gfx::Measure(tabs[current]) + 4), 55.0f);
-  g.Fill(Rect{static_cast<int>(std::lround(boxX)), kFooterY - 1, static_cast<int>(std::lround(boxW)), 9}, kCtrl);
-  for (std::size_t page = first; page <= last; ++page)
-  {
-    const int tabX = positions[page];
-    const int tabW = Gfx::Measure(tabs[page]);
-    const bool covered = tabX >= boxX - 1 && tabX + tabW <= boxX + boxW + 1;
-    g.Text(tabX, kFooterY, tabs[page], covered ? kBlack : (page == current ? kInk : kDim));
-  }
+  (void)render::DrawPageTabs(g, controller, animator);
 }
 
 void DrawFooter(Gfx& g, const Controller& controller, Animator& animator)
@@ -325,29 +252,18 @@ void DrawFooter(Gfx& g, const Controller& controller, Animator& animator)
   const UiState& state = controller.State();
   const std::uint32_t now = animator.Now();
   g.DottedHLine(kContentX, kFooterY - 3, kContentWidth, kShade, 1);
-  auto drawToast = [&](const std::string& text, ToastKind kind, int lift, float typed, int shake) {
-    const Color color = kind == ToastKind::Error ? kRec : kind == ToastKind::Ok ? kPlay : kInk;
-    const Rect band{kFooterX - 2, kFooterY - 2, kFooterWidth + 4, 11};
-    g.SetClip(band);
-    const float pulse = kind == ToastKind::Error ? 0.5f + 0.5f * std::sin(static_cast<float>(now) / 70.0f) : 1.0f;
-    g.Fill(Rect{band.x, band.y + lift, band.width, band.height}, kBlack);
-    g.Dither(Rect{kFooterX + shake, kFooterY - 1 + lift, 4, 9}, color, static_cast<int>(6.0f + 6.0f * pulse));
-    fx::TypeText(g, kFooterX + 8 + shake, kFooterY + lift, text.substr(0, static_cast<std::size_t>(kFooterWidth / 6 - 2)), color, Font::Micro, typed);
-    g.ResetClip();
-  };
+  render::ToastStyle toastStyle;
+  toastStyle.band = Rect{kFooterX - 2, kFooterY - 2, kFooterWidth + 4, 11};
+  toastStyle.textX = kFooterX + 8;toastStyle.textY = kFooterY;
+  toastStyle.markerX = kFooterX;toastStyle.markerY = kFooterY - 1;
+  toastStyle.maxCharacters = kFooterWidth / 6 - 2;
   if (!state.toast.text.empty())
   {
-    // Toast slides up from below and types itself out; an error shakes first.
-    const float t = fx::Progress(now, animator.ToastAt(), 220);
-    const int lift = static_cast<int>((1.0f - fx::EaseOutBack(t)) * 9.0f);
-    const std::uint32_t age = now - animator.ToastAt();
-    const int shake = state.toast.kind == ToastKind::Error && age < 260
-        ? static_cast<int>(std::sin(static_cast<float>(age) / 18.0f) * 4.0f * (1.0f - static_cast<float>(age) / 260.0f)) : 0;
-    drawToast(state.toast.text, state.toast.kind, lift, fx::Progress(now, animator.ToastAt(), 260), shake);
+    (void)render::DrawToast(g, controller, animator, toastStyle, false);
     return;
   }
   const float toastExit = fx::Progress(now, animator.ToastEndedAt(), kToastExitMs);
-  const bool exiting = animator.ToastEndedAt() != 0 && toastExit < 1.0f;
+  const bool exiting = animator.ToastEndedAt() != 0 && toastExit < 1;
   if (const Modal* modal = controller.TopModal())
   {
     if (modal->kind == ModalKind::Menu)
@@ -418,12 +334,8 @@ void DrawFooter(Gfx& g, const Controller& controller, Animator& animator)
     return;
   }
   DrawTabs(g, controller, animator);
-  if (exiting)
-  {
-    // Ending: the toast un-types and drops out, uncovering the tabs.
-    const int drop = static_cast<int>(fx::EaseInOutCubic(toastExit) * 11.0f);
-    drawToast(animator.EndedToast(), animator.EndedToastKind(), drop, 1.0f - toastExit, 0);
-  }
+  if (exiting) (void)render::DrawToast(g, controller, animator, toastStyle);
+
 }
 
 // Hold maps cover the content area with tiles laid out exactly like the GRID keys under the right
@@ -433,19 +345,7 @@ const Rect kMapArea{kContentX - 2, kContentY - 2, kContentWidth + 4, kContentHei
 // The map grows out of the strip of the key that summoned it, over a darkening scrim.
 void BeginOverlay(Gfx& g, std::size_t index, Rect& panel, Color accent, float t)
 {
-  fx::Fade(g, kContentArea, static_cast<int>(t * static_cast<float>(kDitherScrim)));
-  const Rect strip = StripRect(index);
-  const int originY = strip.y + strip.height / 2;
-  const Rect grown{kStripWidth + 2 + static_cast<int>(static_cast<float>(panel.x - kStripWidth - 2) * t),
-                   originY + static_cast<int>(static_cast<float>(panel.y - originY) * t),
-                   std::max(1, static_cast<int>(static_cast<float>(panel.width) * t)),
-                   std::max(1, static_cast<int>(static_cast<float>(panel.height) * t))};
-  g.Fill(grown, kBlack);
-  g.Stroke(grown, accent);
-  // A tether from the strip to the panel while it grows.
-  if (t < 1.0f) g.HLine(kStripWidth, originY, grown.x - kStripWidth, accent);
-  panel = grown;
-  g.SetClip(grown);
+  panel = render::GrowOverlay(g, kContentArea, panel, StripRect(index), accent, t);
 }
 
 // The header line names the map and how to use it while the map is up.
@@ -460,31 +360,14 @@ void DrawMapTitle(Gfx& g, const std::string& title, const std::string& hint, Col
 // Tiles drop into place one after another along the GRID diagonal.
 Rect DropIn(const Rect& rect, float t, std::size_t order)
 {
-  const float tileT = fx::EaseOutBack(fx::Clamp01(t * 1.8f - static_cast<float>(order) * 0.09f));
-  return Rect{rect.x, rect.y - static_cast<int>((1.0f - tileT) * 8.0f), rect.width, rect.height};
+  return render::DropInTile(rect, t, order);
 }
 
 // One map tile. `current` is drawn inverse with crawling ants in the map's colour; a tile the key
 // cannot use right now stays dotted.
 void MapTile(Gfx& g, const Rect& tile, bool current, bool usable, Color accent, std::uint32_t now, Color fill = kInk)
 {
-  if (current)
-  {
-    g.Fill(tile, fill);
-    fx::MarchingAnts(g, Rect{tile.x - 2, tile.y - 2, tile.width + 4, tile.height + 4}, accent, now);
-    return;
-  }
-  g.Fill(tile, kBlack);
-  if (usable)
-  {
-    g.Dither(tile, kFaint, 2);
-    g.Stroke(tile, kDim);
-  }
-  else
-  {
-    g.DottedHLine(tile.x, tile.y, tile.width, kShade);
-    g.DottedHLine(tile.x, tile.y + tile.height - 1, tile.width, kShade);
-  }
+  render::DrawMapTile(g, tile, current, usable, accent, now, fill);
 }
 
 void PressRipple(Gfx& g, Animator& animator, std::size_t index, const Rect& tile, Color accent)
@@ -497,28 +380,9 @@ void PressRipple(Gfx& g, Animator& animator, std::size_t index, const Rect& tile
 // for about a second after an FN function or a SETUP reset. It rises in and sinks out.
 void DrawHud(Gfx& g, const Controller& controller, Animator& animator)
 {
-  const Hud& hud = controller.State().hud;
-  const std::uint32_t now = animator.Now();
-  if (hud.at == 0 || now - hud.at >= kHudMs) return;
-  const std::uint32_t age = now - hud.at;
-  const float in = fx::EaseOutBack(fx::Clamp01(static_cast<float>(age) / 140.0f));
-  const float out = fx::Clamp01(static_cast<float>(static_cast<int>(age) - static_cast<int>(kHudMs - 220)) / 220.0f);
-  // A bar over the bottom GRID row: label on the left, the value large beside it, a meter right.
-  const Rect box{kContentX + 4, kContentBottom - 27 + static_cast<int>((1.0f - in) * 8.0f + out * 6.0f), kContentWidth - 8, 26};
-  g.Fill(Rect{box.x - 2, box.y - 2, box.width + 4, box.height + 4}, kBlack);
-  g.Fill(Rect{box.x, box.y, 3, box.height}, kFn);
-  g.Stroke(box, kFn);
-  g.TextFit(box.x + 8, box.y + 3, box.width - 16, hud.label, kFn);  // the meter sits on the value line
-  // Without a meter the value has the whole line.
-  const bool meter = hud.fraction >= 0.0f || hud.bipolar;
-  g.TextFit(box.x + 8, box.y + 11, box.width - (meter ? 82 : 16), hud.value, kInk, Font::Large);
-  if (meter)
-  {
-    const Rect bar{box.x + box.width - 66, box.y + 15, 58, 6};
-    if (hud.bipolar) widgets::BipolarBar(g, bar, std::max(-1.0f, std::min(1.0f, hud.fraction)), kInk, kFaint);
-    else widgets::LevelBar(g, bar, hud.fraction, kInk, kFaint);
-  }
-  if (out > 0.0f) fx::Fade(g, Rect{box.x - 2, box.y - 2, box.width + 4, box.height + 4}, static_cast<int>(out * 16.0f));
+  render::HudStyle style;
+  style.box = Rect{kContentX + 4, kContentBottom - 27, kContentWidth - 8, 26};
+  render::DrawHud(g, controller, animator, style);
 }
 
 // ESC: four tall tiles, one per GRID column, each listing its scene's pages. The first, 0 SETUP
@@ -687,35 +551,114 @@ void DrawFnOverlay(Gfx& g, const Controller& controller, Animator& animator, flo
 
 void DrawContent(Gfx& g, const Controller& controller, Animator& animator)
 {
+  struct Context { const Controller* controller; Animator* animator; } context{&controller, &animator};
+  render::ContentPainters painters;
+  painters.context = &context;
+  painters.scene = [](void* value, Gfx& painter, Scene scene, std::uint8_t page, bool) {
+    const auto& ctx = *static_cast<Context*>(value);
+    render::SceneContent(painter, *ctx.controller, *ctx.animator, scene, page);
+  };
+  painters.modal = [](void* value, Gfx& painter, const Modal& modal, bool) {
+    const auto& ctx = *static_cast<Context*>(value);
+    render::ModalContent(painter, *ctx.controller, *ctx.animator, modal);
+  };
+  render::DrawContentFrame(g, controller, animator, {}, painters);
+}
+
+void DrawRecordVignette(Gfx& g, const Controller& controller, Animator& animator)
+{
+  render::DrawRecordFrame(g, Rect{kContentX - 3, kContentY - 3, kContentWidth + 6, kContentHeight + 6}, controller, animator);
+}
+
+void DrawBoot(Gfx& g, Animator& animator)
+{
+  render::DrawBoot(g, animator, {});
+}
+
+}  // namespace
+
+void render::DrawMapTile(Gfx& g, const Rect& tile, bool current, bool usable, Color accent, std::uint32_t now, Color fill)
+{
+  if (current)
+  {
+    g.Fill(tile, fill);
+    fx::MarchingAnts(g, Rect{tile.x - 2, tile.y - 2, tile.width + 4, tile.height + 4}, accent, now);
+    return;
+  }
+  g.Fill(tile, kBlack);
+  if (usable)
+  {
+    g.Dither(tile, kFaint, 2);
+    g.Stroke(tile, kDim);
+  }
+  else
+  {
+    g.DottedHLine(tile.x, tile.y, tile.width, kShade);
+    g.DottedHLine(tile.x, tile.y + tile.height - 1, tile.width, kShade);
+  }
+}
+
+void render::DrawBoot(Gfx& g, Animator& animator, const BootStyle& style)
+{
+  const std::uint32_t now = animator.Now();
+  const std::uint32_t elapsed = now - animator.BootAt();
+  const float t = static_cast<float>(elapsed) / static_cast<float>(kBootMs);
+  // Scan line sweeping a noise field, the logotype decoding behind it.
+  for (int y = 0; y < style.bounds.height; y += 3)
+  {
+    const std::uint32_t noise = fx::Hash(static_cast<std::uint32_t>(y) * 131u + now / 33);
+    g.Dither(Rect{style.bounds.x, style.bounds.y + y, style.bounds.width, 2}, kShade, static_cast<int>(noise % 4));
+  }
+  const char* title = "CARDENZA";
+  const int titleX = style.bounds.x + (style.bounds.width - Gfx::Measure(title, Font::Huge)) / 2;
+  fx::DecodeText(g, titleX, style.titleY, title, kInk, Font::Huge, fx::Clamp01(t * 2.2f - 0.1f), now / 45);
+  const char* subtitle = "GROOVEBOX";
+  const int subtitleX = style.bounds.x + (style.bounds.width - Gfx::Measure(subtitle, style.subtitleFont)) / 2;
+  fx::DecodeText(g, subtitleX, style.subtitleY, subtitle, kTab, style.subtitleFont, fx::Clamp01(t * 2.6f - 0.8f), now / 45);
+  // Four colored dashes: the four hidden keys, landing one by one.
+  for (std::size_t index = 0; index < 4; ++index)
+  {
+    const float landed = fx::EaseOutBack(fx::Clamp01(t * 3.0f - 0.9f - static_cast<float>(index) * 0.18f));
+    const int x = style.dashLeft + static_cast<int>(index) * style.dashPitch;
+    const int y = style.dashY + static_cast<int>((1.0f - landed) * 20.0f);
+    if (landed > 0.0f) g.Dither(Rect{x, y, style.dashWidth, style.dashHeight}, kStripColors[index], 10);
+  }
+  const int scan = static_cast<int>(fx::Clamp01(t * 1.4f) * static_cast<float>(style.bounds.height + 10));
+  fx::ScanLine(g, style.bounds.x, style.bounds.width, style.bounds.y + scan, 8, kDim);
+}
+
+void render::DrawContentFrame(Gfx& g, const Controller& controller, Animator& animator, const ContentFrameStyle& style, const ContentPainters& painters)
+{
+  if (painters.scene == nullptr || painters.modal == nullptr) return;
   const UiState& state = controller.State();
   const std::uint32_t now = animator.Now();
-  g.SetClip(kContentArea);
+  g.SetClip(style.area);
   if (const Modal* modal = controller.TopModal())
   {
-    render::ModalContent(g, controller, animator, *modal);
+    painters.modal(painters.context, g, *modal, true);
     // Modals unfold from the centre line between two bright scan lines.
     const float t = fx::EaseOutCubic(fx::Progress(now, animator.ModalOpenedAt(), kModalOpenMs));
     if (t < 1.0f)
     {
-      const int middle = kContentArea.y + kContentArea.height / 2;
-      const int half = static_cast<int>(t * static_cast<float>(kContentArea.height / 2));
-      g.Fill(Rect{kContentArea.x, kContentArea.y, kContentArea.width, middle - half - kContentArea.y}, kBlack);
-      g.Fill(Rect{kContentArea.x, middle + half, kContentArea.width, kContentArea.y + kContentArea.height - middle - half}, kBlack);
-      g.HLine(kContentArea.x, middle - half, kContentArea.width, kInk);
-      g.HLine(kContentArea.x, middle + half, kContentArea.width, kInk);
+      const int middle = style.area.y + style.area.height / 2;
+      const int half = static_cast<int>(t * static_cast<float>(style.area.height / 2));
+      g.Fill(Rect{style.area.x, style.area.y, style.area.width, middle - half - style.area.y}, kBlack);
+      g.Fill(Rect{style.area.x, middle + half, style.area.width, style.area.y + style.area.height - middle - half}, kBlack);
+      g.HLine(style.area.x, middle - half, style.area.width, kInk);
+      g.HLine(style.area.x, middle + half, style.area.width, kInk);
     }
     if (const Modal* closing = animator.ClosingModal(); closing != nullptr && closing != modal)
     {
       const float fold = fx::EaseInOutCubic(fx::Progress(now, animator.ClosingModalAt(), kModalCloseMs));
-      const int middle = kContentArea.y + kContentArea.height / 2;
-      const int half = static_cast<int>((1.0f - fold) * static_cast<float>(kContentArea.height / 2));
+      const int middle = style.area.y + style.area.height / 2;
+      const int half = static_cast<int>((1.0f - fold) * static_cast<float>(style.area.height / 2));
       if (half > 0 && animator.ClosingModalAt() > animator.ModalOpenedAt())
       {
-        const Rect band{kContentArea.x, middle - half, kContentArea.width, half * 2};
+        const Rect band{style.area.x, middle - half, style.area.width, half * 2};
         g.SetClip(band);
         g.Fill(band, kBlack);
-        render::ModalContent(g, controller, animator, *closing);
-        g.SetClip(kContentArea);
+        painters.modal(painters.context, g, *closing, false);
+        g.SetClip(style.area);
         g.HLine(band.x, band.y, band.width, kInk);
         g.HLine(band.x, band.y + band.height - 1, band.width, kInk);
       }
@@ -731,61 +674,61 @@ void DrawContent(Gfx& g, const Controller& controller, Animator& animator)
     // sideways. Going down (direction 1: every tap on ESC, round the ring and out of SETUP; Animator's
     // SceneDirection) the new floor rises from below and the one left goes up out of sight; going up,
     // the other way. A line in the ESC color is the floor between them.
-    constexpr int kFloorGap = 6;
+    const int kFloorGap = style.sceneGap;
     const float p = fx::EaseInOutCubic(fx::Progress(now, transition.start, transition.duration));
     const int direction = transition.direction;
-    const int distance = kContentArea.height + kFloorGap;
+    const int distance = style.area.height + kFloorGap;
     const int outgoing = -direction * static_cast<int>(p * static_cast<float>(distance));
     const int incoming = direction * static_cast<int>((1.0f - p) * static_cast<float>(distance));
     g.SetOrigin(0, outgoing);
-    render::SceneContent(g, controller, animator, transition.fromScene, transition.fromPage);
+    painters.scene(painters.context, g, transition.fromScene, transition.fromPage, false);
     g.SetOrigin(0, incoming);
-    render::SceneContent(g, controller, animator, state.scene, controller.CurrentPage());
+    painters.scene(painters.context, g, state.scene, controller.CurrentPage(), true);
     g.SetOrigin(0, 0);
-    const int floorY = direction > 0 ? kContentArea.y + incoming - kFloorGap / 2 - 1
-                                     : kContentArea.y + incoming + kContentArea.height + kFloorGap / 2;
-    g.HLine(kContentArea.x, floorY, kContentArea.width, kEsc);
+    const int floorY = direction > 0 ? style.area.y + incoming - kFloorGap / 2 - 1
+                                     : style.area.y + incoming + style.area.height + kFloorGap / 2;
+    g.HLine(style.area.x, floorY, style.area.width, kEsc);
   }
   else if (animator.TransitionActive())
   {
     const float p = fx::EaseInOutCubic(fx::Progress(now, transition.start, transition.duration));
-    const int distance = kContentWidth / 2 + 10;
+    const int distance = style.pageTravel;
     const int direction = transition.direction;
     const int outgoing = -direction * static_cast<int>(p * static_cast<float>(distance));
     const int incoming = direction * static_cast<int>((1.0f - p) * static_cast<float>(distance));
     g.SetOrigin(outgoing, 0);
-    render::SceneContent(g, controller, animator, transition.fromScene, transition.fromPage);
+    painters.scene(painters.context, g, transition.fromScene, transition.fromPage, false);
     g.SetOrigin(0, 0);
     // Pages overlap: the outgoing page sinks into the dither while the new one covers it.
-    fx::Fade(g, kContentArea, static_cast<int>(p * 14.0f));
-    const int left = direction > 0 ? kContentArea.x + incoming : kContentArea.x;
-    const int right = direction > 0 ? kContentArea.x + kContentArea.width : kContentArea.x + kContentArea.width + incoming;
-    g.Fill(Rect{left, kContentArea.y, right - left, kContentArea.height}, kBlack);
+    fx::Fade(g, style.area, static_cast<int>(p * 14.0f));
+    const int left = direction > 0 ? style.area.x + incoming : style.area.x;
+    const int right = direction > 0 ? style.area.x + style.area.width : style.area.x + style.area.width + incoming;
+    g.Fill(Rect{left, style.area.y, right - left, style.area.height}, kBlack);
     g.SetOrigin(incoming, 0);
-    render::SceneContent(g, controller, animator, state.scene, controller.CurrentPage());
+    painters.scene(painters.context, g, state.scene, controller.CurrentPage(), true);
     g.SetOrigin(0, 0);
     // The seam rides the leading edge of the incoming page.
-    const int seamX = direction > 0 ? kContentArea.x + incoming : kContentArea.x + kContentArea.width + incoming - 1;
-    fx::Seam(g, seamX, kContentArea.y, kContentArea.height, direction, kCtrl);
+    const int seamX = direction > 0 ? style.area.x + incoming : style.area.x + style.area.width + incoming - 1;
+    fx::Seam(g, seamX, style.area.y, style.area.height, direction, kCtrl);
   }
   else
   {
-    render::SceneContent(g, controller, animator, state.scene, controller.CurrentPage());
+    painters.scene(painters.context, g, state.scene, controller.CurrentPage(), true);
   }
 
   // Ending: a closed modal folds shut toward the centre line over whatever lies beneath.
   if (const Modal* closing = animator.ClosingModal())
   {
     const float t = fx::EaseInOutCubic(fx::Progress(now, animator.ClosingModalAt(), kModalCloseMs));
-    const int middle = kContentArea.y + kContentArea.height / 2;
-    const int half = static_cast<int>((1.0f - t) * static_cast<float>(kContentArea.height / 2));
+    const int middle = style.area.y + style.area.height / 2;
+    const int half = static_cast<int>((1.0f - t) * static_cast<float>(style.area.height / 2));
     if (half > 0)
     {
-      const Rect band{kContentArea.x, middle - half, kContentArea.width, half * 2};
+      const Rect band{style.area.x, middle - half, style.area.width, half * 2};
       g.SetClip(band);
       g.Fill(band, kBlack);
-      render::ModalContent(g, controller, animator, *closing);
-      g.SetClip(kContentArea);
+      painters.modal(painters.context, g, *closing, false);
+      g.SetClip(style.area);
       g.HLine(band.x, band.y, band.width, kInk);
       g.HLine(band.x, band.y + band.height - 1, band.width, kInk);
     }
@@ -795,55 +738,232 @@ void DrawContent(Gfx& g, const Controller& controller, Animator& animator)
   const float wipe = fx::Progress(now, animator.TrackChangedAt(), kTrackWipeMs);
   if (animator.TrackChangedAt() != 0 && wipe < 1.0f)
   {
-    const int y = kContentArea.y + static_cast<int>(fx::EaseOutCubic(wipe) * static_cast<float>(kContentArea.height));
-    fx::Fade(g, Rect{kContentArea.x, y, kContentArea.width, kContentArea.y + kContentArea.height - y}, 11);
-    fx::ScanLine(g, kContentArea.x, kContentArea.width, y, 6, kTab);
+    const int y = style.area.y + static_cast<int>(fx::EaseOutCubic(wipe) * static_cast<float>(style.area.height));
+    fx::Fade(g, Rect{style.area.x, y, style.area.width, style.area.y + style.area.height - y}, 11);
+    fx::ScanLine(g, style.area.x, style.area.width, y, 6, kTab);
   }
   g.ResetClip();
 }
 
-void DrawRecordVignette(Gfx& g, const Controller& controller, Animator& animator)
+void render::DrawHud(Gfx& g, const Controller& controller, Animator& animator, const HudStyle& style)
+{
+  const auto& hud = controller.State().hud;
+  const auto now = animator.Now();
+  if (hud.at == 0 || now - hud.at >= kHudMs) return;
+  const auto age = now - hud.at;
+  const float in = fx::EaseOutBack(fx::Clamp01(static_cast<float>(age) / 140.0f));
+  const float out = fx::Clamp01(static_cast<float>(static_cast<int>(age) - static_cast<int>(kHudMs - 220)) / 220.0f);
+  Rect box = style.box;
+  box.y += static_cast<int>((1.0f - in) * 8.0f + out * 6.0f);
+  g.Fill(Rect{box.x - 2, box.y - 2, box.width + 4, box.height + 4}, kBlack);
+  g.Fill(Rect{box.x, box.y, 3, box.height}, kFn);
+  g.Stroke(box, kFn);
+  g.TextFit(box.x + style.padding, box.y + style.labelY, box.width - style.padding * 2, hud.label, kFn, style.labelFont);
+  const bool meter = hud.fraction >= 0.0f || hud.bipolar;
+  g.TextFit(box.x + style.padding, box.y + style.valueY,
+      box.width - (meter ? style.valueMeterReserve : style.padding * 2), hud.value, kInk, style.valueFont);
+  if (meter)
+  {
+    const Rect bar{box.x + box.width - style.padding - style.meterWidth, box.y + style.meterY, style.meterWidth, style.meterHeight};
+    if (hud.bipolar) widgets::BipolarBar(g, bar, std::clamp(hud.fraction, -1.0f, 1.0f), kInk, kFaint);
+    else widgets::LevelBar(g, bar, hud.fraction, kInk, kFaint);
+  }
+  if (out > 0) fx::Fade(g, Rect{box.x - 2, box.y - 2, box.width + 4, box.height + 4}, static_cast<int>(out * 16));
+}
+
+bool render::DrawToast(Gfx& g, const Controller& controller, Animator& animator, const ToastStyle& style, bool drawExit)
+{
+  const auto& state = controller.State();
+  const auto now = animator.Now();
+  const bool active = !state.toast.text.empty();
+  const float exit = fx::Progress(now, animator.ToastEndedAt(), kToastExitMs);
+  if (!active && (!drawExit || animator.ToastEndedAt() == 0 || exit >= 1)) return false;
+  const auto& text = active ? state.toast.text : animator.EndedToast();
+  const auto kind = active ? state.toast.kind : animator.EndedToastKind();
+  const Color color = kind == ToastKind::Error ? kRec : kind == ToastKind::Ok ? kPlay : kInk;
+  const auto age = now - animator.ToastAt();
+  const int lift = active ? static_cast<int>((1.0f - fx::EaseOutBack(fx::Progress(now, animator.ToastAt(), 220))) * 9) :
+      static_cast<int>(fx::EaseInOutCubic(exit) * 11);
+  const int shake = active && kind == ToastKind::Error && age < 260 ?
+      static_cast<int>(std::sin(static_cast<float>(age) / 18) * 4 * (1.0f - static_cast<float>(age) / 260)) : 0;
+  const float typed = active ? fx::Progress(now, animator.ToastAt(), 260) : 1.0f - exit;
+  const auto clip = g.Clip();
+  g.SetClip(style.band);
+  const float pulse = kind == ToastKind::Error ? 0.5f + 0.5f * std::sin(static_cast<float>(now) / 70) : 1;
+  g.Fill(Rect{style.band.x, style.band.y + lift, style.band.width, style.band.height}, kBlack);
+  g.Dither(Rect{style.markerX + shake, style.markerY + lift, 4, style.markerHeight}, color, static_cast<int>(6 + 6 * pulse));
+  fx::TypeText(g, style.textX + shake, style.textY + lift, text.substr(0, static_cast<std::size_t>(style.maxCharacters)), color, style.font, typed);
+  g.SetClip(clip);
+  return true;
+}
+
+void render::DrawRecordFrame(Gfx& g, const Rect& area, const Controller& controller, Animator& animator, int thickness)
 {
   const auto& sequencer = controller.HostView().Sequencer();
   if (!sequencer.RecordArmed() || !sequencer.Playing()) return;
-  const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(animator.Now()) / 140.0f);
-  const int level = 3 + static_cast<int>(pulse * 6.0f);
-  g.Dither(Rect{kContentX - 3, kContentY - 3, kContentWidth + 6, 2}, kRec, level);
-  g.Dither(Rect{kContentX - 3, kContentBottom + 1, kContentWidth + 6, 2}, kRec, level);
-  g.Dither(Rect{kContentX - 3, kContentY - 3, 2, kContentHeight + 6}, kRec, level);
-  g.Dither(Rect{kContentRight + 1, kContentY - 3, 2, kContentHeight + 6}, kRec, level);
+  const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(animator.Now()) / 140);
+  const int level = 3 + static_cast<int>(pulse * 6);
+  g.Dither(Rect{area.x, area.y, area.width, thickness}, kRec, level);
+  g.Dither(Rect{area.x, area.y + area.height - thickness, area.width, thickness}, kRec, level);
+  g.Dither(Rect{area.x, area.y, thickness, area.height}, kRec, level);
+  g.Dither(Rect{area.x + area.width - thickness, area.y, thickness, area.height}, kRec, level);
 }
 
-void DrawBoot(Gfx& g, Animator& animator)
+void render::DrawSessionSweep(Gfx& g, const Rect& bounds, const Controller& controller, Animator& animator)
 {
-  const std::uint32_t now = animator.Now();
-  const std::uint32_t elapsed = now - animator.BootAt();
-  const float t = static_cast<float>(elapsed) / static_cast<float>(kBootMs);
-  // Scan line sweeping a noise field, the logotype decoding behind it.
-  for (int y = 0; y < kScreenHeight; y += 3)
+  const auto& state = controller.State();
+  const auto now = animator.Now();
+  const float session = fx::Progress(now, state.sessionAt, kSessionSweepMs);
+  if (state.sessionAt != 0 && session < 1)
   {
-    const std::uint32_t noise = fx::Hash(static_cast<std::uint32_t>(y) * 131u + now / 33);
-    g.Dither(Rect{0, y, kScreenWidth, 2}, kShade, static_cast<int>(noise % 4));
+    const int y = bounds.y + static_cast<int>(fx::EaseInOutCubic(session) * (bounds.height + 12));
+    fx::Fade(g, Rect{bounds.x, y, bounds.width, std::max(0, bounds.y + bounds.height - y)}, 12);
+    fx::ScanLine(g, bounds.x, bounds.width, y, 10, kInk);
   }
-  const char* title = "CARDENZA";
-  const int titleX = (kScreenWidth - Gfx::Measure(title, Font::Huge)) / 2;
-  fx::DecodeText(g, titleX, 40, title, kInk, Font::Huge, fx::Clamp01(t * 2.2f - 0.1f), now / 45);
-  const char* subtitle = "GROOVEBOX";
-  const int subtitleX = (kScreenWidth - Gfx::Measure(subtitle)) / 2;
-  fx::DecodeText(g, subtitleX, 70, subtitle, kTab, Font::Micro, fx::Clamp01(t * 2.6f - 0.8f), now / 45);
-  // Four colored dashes: the four hidden keys, landing one by one.
-  for (std::size_t index = 0; index < 4; ++index)
-  {
-    const float landed = fx::EaseOutBack(fx::Clamp01(t * 3.0f - 0.9f - static_cast<float>(index) * 0.18f));
-    const int x = kScreenWidth / 2 - 38 + static_cast<int>(index) * 20;
-    const int y = 88 + static_cast<int>((1.0f - landed) * 20.0f);
-    if (landed > 0.0f) g.Dither(Rect{x, y, 16, 4}, kStripColors[index], 10);
-  }
-  const int scan = static_cast<int>(fx::Clamp01(t * 1.4f) * static_cast<float>(kScreenHeight + 10));
-  fx::ScanLine(g, 0, kScreenWidth, scan, 8, kDim);
 }
 
-}  // namespace
+void render::DrawPanic(Gfx& g, const Rect& bounds, const Controller& controller, Animator& animator)
+{
+  const auto& state = controller.State();
+  const auto now = animator.Now();
+  const float panic = fx::Decay(now, state.panicAt, kPanicMs);
+  if (panic > 0)
+  {
+    g.Dither(bounds, kInk, static_cast<int>(panic * panic * 14));
+    const Rect stamp{bounds.x + bounds.width / 2 - 62, bounds.y + bounds.height / 2 - 15, 124, 30};
+    g.Fill(stamp, kBlack);g.Stroke(stamp, kRec);
+    g.TextAligned(stamp, "ALL STOP", panic > 0.5f || (now / 60) % 2 ? kRec : kInk, Font::Large, Align::Center);
+  }
+}
+
+void render::DrawSessionAndPanic(Gfx& g, const Rect& bounds, const Controller& controller, Animator& animator)
+{
+  DrawSessionSweep(g, bounds, controller, animator);
+  DrawPanic(g, bounds, controller, animator);
+}
+
+void render::DrawBootHandoff(Gfx& g, const Rect& bounds, Animator& animator)
+{
+  const auto sinceBoot = animator.Now() - animator.BootAt();
+  if (sinceBoot >= kBootMs - 300 && sinceBoot < kBootMs)
+  {
+    const float t = static_cast<float>(sinceBoot - (kBootMs - 300)) / 300;
+    fx::Fade(g, bounds, 16 - static_cast<int>(t * 16));
+  }
+}
+
+Rect render::GrowOverlay(Gfx& g, const Rect& content, const Rect& panel, const Rect& source, Color accent, float t)
+{
+  fx::Fade(g, content, static_cast<int>(t * kDitherScrim));
+  const int originY = source.y + source.height / 2;
+  const int edge = source.x + source.width;
+  const Rect grown{edge + 2 + static_cast<int>((panel.x - edge - 2) * t),
+      originY + static_cast<int>((panel.y - originY) * t),
+      std::max(1, static_cast<int>(panel.width * t)), std::max(1, static_cast<int>(panel.height * t))};
+  g.Fill(grown, kBlack);g.Stroke(grown, accent);
+  if (t < 1) g.HLine(edge, originY, grown.x - edge, accent);
+  g.SetClip(grown);
+  return grown;
+}
+
+Rect render::DropInTile(const Rect& rect, float t, std::size_t order, int distance)
+{
+  const float tileT = fx::EaseOutBack(fx::Clamp01(t * 1.8f - static_cast<float>(order) * 0.09f));
+  return Rect{rect.x, rect.y - static_cast<int>((1.0f - tileT) * distance), rect.width, rect.height};
+}
+
+render::PageTabsLayout render::DrawPageTabs(Gfx& g, const Controller& controller, Animator& animator, const PageTabsStyle& style)
+{
+  PageTabsLayout result;
+  const UiState& state = controller.State();
+  const std::size_t count = controller.PageCount(state.scene);
+  if (count == 0) return result;
+  const std::size_t current = std::min<std::size_t>(controller.CurrentPage(), count - 1);
+  std::vector<std::string> tabs;
+  std::vector<int> widths;
+  int total = 0;
+  for (std::size_t page = 0; page < count; ++page)
+  {
+    tabs.push_back(controller.PageTab(state.scene, page));
+    widths.push_back(Gfx::Measure(tabs.back(), style.font) + style.gap);
+    total += widths.back();
+  }
+  std::size_t first = 0;
+  std::size_t last = count - 1;
+  int left = style.left;
+  int right = style.right;
+  // A long pattern: which of its pages the GRID shows, yellow once flipped by hand.
+  const bool stepPages = controller.State().scene == Scene::Sequence && current == 0;
+  if (stepPages)
+  {
+    const auto seq = controller.HostView().Sequencer().BuildUiState(controller.State().track);
+    if (seq.viewPageCount > 1)
+    {
+      const std::string pages = std::to_string(seq.viewPage + 1) + "/" + std::to_string(seq.viewPageCount);
+      g.Text(style.right - Gfx::Measure(pages, style.font), style.y, pages, seq.viewFollow ? kDim : kFn, style.font);
+      right -= Gfx::Measure(pages, style.font) + style.patternCounterGap;
+    }
+  }
+  if (total > right - left)
+  {
+    char counter[24];
+    std::snprintf(counter, sizeof(counter), "%02u/%02u", static_cast<unsigned>(current + 1), static_cast<unsigned>(count));
+    g.Text(right - Gfx::Measure(counter, style.font), style.y, counter, kFaint, style.font);
+    right -= Gfx::Measure(counter, style.font) + style.counterGap;
+    // Grow the window from the current tab, alternating right and left, while it fits. Room for
+    // the "<" is kept only when tabs are hidden on the left: the first tab stays flush left.
+    auto grow = [&]() {
+      first = last = current;
+      int used = widths[current];
+      for (bool grew = true; grew;)
+      {
+        grew = false;
+        if (last + 1 < count && used + widths[last + 1] <= right - left) { used += widths[++last]; grew = true; }
+        if (first > 0 && used + widths[first - 1] <= right - left) { used += widths[--first]; grew = true; }
+      }
+    };
+    grow();
+    if (first > 0)
+    {
+      left = style.left + style.arrowSpace;
+      grow();
+    }
+    if (first > 0)
+    {
+      g.Text(style.left, style.y, "<", kCtrl, style.font);
+      result.moreBefore = true;
+      result.previous = Rect{style.left - style.highlightPadding, style.y + style.highlightOffsetY, style.arrowSpace, style.highlightHeight};
+    }
+    if (last + 1 < count)
+    {
+      g.Text(right + 2, style.y, ">", kCtrl, style.font);
+      result.moreAfter = true;
+      result.next = Rect{right + 2, style.y + style.highlightOffsetY, style.arrowSpace, style.highlightHeight};
+    }
+  }
+  std::vector<int> positions(count, 0);
+  int x = left;
+  for (std::size_t page = first; page <= last; ++page)
+  {
+    positions[page] = x;
+    x += widths[page];
+  }
+  // The violet highlight glides to the current tab.
+  const std::uint32_t key = Animator::Key("tabs", static_cast<std::uint32_t>(state.scene) * 7 + static_cast<std::uint32_t>(state.track));
+  const float boxX = animator.Smooth(key, static_cast<float>(positions[current] - style.highlightPadding), 55.0f);
+  const float boxW = animator.Smooth(key + 1, static_cast<float>(Gfx::Measure(tabs[current], style.font) + style.highlightPadding * 2), 55.0f);
+  g.Fill(Rect{static_cast<int>(std::lround(boxX)), style.y + style.highlightOffsetY, static_cast<int>(std::lround(boxW)), style.highlightHeight}, kCtrl);
+  for (std::size_t page = first; page <= last; ++page)
+  {
+    const int tabX = positions[page];
+    const int tabW = Gfx::Measure(tabs[page], style.font);
+    const bool covered = tabX >= boxX - 1 && tabX + tabW <= boxX + boxW + 1;
+    g.Text(tabX, style.y, tabs[page], covered ? kBlack : (page == current ? kInk : kDim), style.font);
+    result.tabs.push_back(PageTabPosition{page, Rect{tabX - style.highlightPadding, style.y + style.highlightOffsetY,
+        widths[page], style.highlightHeight}});
+  }
+  return result;
+}
 
 void RenderFrame(Gfx& g, const Controller& controller, Animator& animator)
 {
@@ -885,33 +1005,10 @@ void RenderFrame(Gfx& g, const Controller& controller, Animator& animator)
 
   DrawHud(g, controller, animator);
 
-  // Session replaced (load / new): one bright scan refreshes the whole screen.
-  const UiState& state = controller.State();
-  const float session = fx::Progress(now, state.sessionAt, kSessionSweepMs);
-  if (state.sessionAt != 0 && session < 1.0f)
-  {
-    const int y = static_cast<int>(fx::EaseInOutCubic(session) * static_cast<float>(kScreenHeight + 12));
-    fx::Fade(g, Rect{kStripWidth + 1, y, kScreenWidth - kStripWidth - 1, kScreenHeight - y}, 12);
-    fx::ScanLine(g, kStripWidth + 1, kScreenWidth - kStripWidth - 1, y, 10, kInk);
-  }
+  render::DrawSessionSweep(g, Rect{kStripWidth + 1, 0, kScreenWidth - kStripWidth - 1, kScreenHeight}, controller, animator);
+  render::DrawPanic(g, Rect{0, 0, kScreenWidth, kScreenHeight}, controller, animator);
+  render::DrawBootHandoff(g, Rect{0, 0, kScreenWidth, kScreenHeight}, animator);
 
-  // Panic: the screen flares white, ALL STOP stamps the centre, and everything dies to black.
-  const float panic = fx::Decay(now, state.panicAt, kPanicMs);
-  if (panic > 0.0f)
-  {
-    g.Dither(Rect{0, 0, kScreenWidth, kScreenHeight}, kInk, static_cast<int>(panic * panic * 14.0f));
-    const Rect stamp{kScreenWidth / 2 - 62, kScreenHeight / 2 - 15, 124, 30};
-    g.Fill(stamp, kBlack);
-    g.Stroke(stamp, kRec);
-    g.TextAligned(stamp, "ALL STOP", panic > 0.5f || (now / 60) % 2 ? kRec : kInk, Font::Large, Align::Center);
-  }
-
-  // Boot hand-off: the interface resolves out of black through the Bayer thresholds.
-  if (sinceBoot < kBootMs)
-  {
-    const float t = static_cast<float>(sinceBoot - (kBootMs - 300)) / 300.0f;
-    fx::Fade(g, Rect{0, 0, kScreenWidth, kScreenHeight}, 16 - static_cast<int>(t * 16.0f));
-  }
 }
 
 }  // namespace groove

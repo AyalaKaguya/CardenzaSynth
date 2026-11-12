@@ -45,6 +45,16 @@ std::string FreePresetName(const synth::ISynthEngine& engine)
     for (const auto& preset : page.items) taken.push_back(preset.name);
     if (page.items.empty() || offset + kPage >= page.totalCount) break;
   }
+#if defined(CARDENZA_NATIVE_UI)
+  // A native save never opens a text field or grows a chain of numeric suffixes.
+  for (unsigned number = 1; number <= 9999; ++number)
+  {
+    char name[24];
+    std::snprintf(name, sizeof(name), "PRESET %02u", number);
+    if (std::find(taken.begin(), taken.end(), name) == taken.end()) return name;
+  }
+  return "PRESET";
+#else
   const std::string base = engine.CurrentPresetName();
   for (int number = 2; number < 100; ++number)
   {
@@ -52,6 +62,7 @@ std::string FreePresetName(const synth::ISynthEngine& engine)
     if (std::find(taken.begin(), taken.end(), name) == taken.end()) return name;
   }
   return base;
+#endif
 }
 
 }  // namespace
@@ -404,6 +415,13 @@ void Controller::OpenProject(std::string name)
 
 void Controller::SaveProject(bool saveAs)
 {
+#if defined(CARDENZA_NATIVE_UI)
+  if (saveAs || state_.projectName.empty())
+  {
+    SaveProjectAutomatic();
+    return;
+  }
+#endif
   if (saveAs)
   {
     OpenTextEntry(TextPurpose::ProjectSaveAs, "SAVE PROJECT AS", state_.projectName.empty() ? "SONG" : state_.projectName, 24);
@@ -764,7 +782,16 @@ void Controller::RunSlotAction(SlotAction action)
       break;
     }
     case SlotAction::SavePresetAs:
+#if defined(CARDENZA_NATIVE_UI)
+      if (engine != nullptr)
+      {
+        const std::string name = FreePresetName(*engine);
+        if (engine->SavePreset("", name)) ShowToast("SAVED " + name, ToastKind::Ok);
+        else ShowToast("PRESET SAVE FAILED", ToastKind::Error);
+      }
+#else
       if (engine != nullptr) OpenTextEntry(TextPurpose::PresetSaveAs, "SAVE PRESET AS", engine->CurrentPresetName(), 18);
+#endif
       break;
     case SlotAction::SampleFile: OpenSampleBrowser(); break;
     case SlotAction::SampleRecord:
@@ -889,6 +916,9 @@ void Controller::StopStepAudition()
   {
     // A pad sounding the same note itself keeps it: its own release ends it.
     bool held = false;
+#if defined(CARDENZA_NATIVE_UI)
+    held = NativePerformanceHeld(audition.track, audition.notes[slot]);
+#endif
     for (std::size_t pad = 0; pad < state_.padNote.size() && !held; ++pad)
       for (std::size_t voice = 0; voice < state_.padChordCount[pad] && !held; ++voice)
         held = state_.padTrack[pad] == audition.track && !state_.padArp[pad] && state_.padChord[pad][voice] == audition.notes[slot];

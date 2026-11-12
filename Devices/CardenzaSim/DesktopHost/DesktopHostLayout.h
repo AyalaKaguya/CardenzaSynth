@@ -6,11 +6,12 @@
 #include <array>
 #include <cstddef>
 #include <string>
+#include "Devices/Device.h"
 
 namespace CardenzaSim::DesktopHost {
 
-inline constexpr int kScreenWidth = 240;
-inline constexpr int kScreenHeight = 135;
+inline constexpr int kScreenWidth = Device::Display::kWidth;
+inline constexpr int kScreenHeight = Device::Display::kHeight;
 inline constexpr int kPadding = 20;
 inline constexpr int kTopBarHeight = 52;
 inline constexpr int kScaleButtonWidth = 60;
@@ -22,7 +23,11 @@ inline constexpr int kKeyWidth = 54;
 inline constexpr int kKeyHeight = 54;
 inline constexpr int kKeyboardHeaderHeight = 52;
 inline constexpr int kFooterHeight = 24;
+#if defined(CARDENZA_NATIVE_UI)
+inline constexpr int kDefaultScale = 1;
+#else
 inline constexpr int kDefaultScale = 2;
+#endif
 
 struct KeyVisual {
   int midi = 48;

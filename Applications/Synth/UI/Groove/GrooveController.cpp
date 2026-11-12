@@ -37,10 +37,17 @@ Controller::Controller(Host& host) : host_(host)
   state_.padTrack.fill(0);
   state_.instrumentFocus.fill(0);
   state_.page.fill(0);
+#if defined(CARDENZA_NATIVE_UI)
+  NativePublishPerformance();
+#endif
 }
 
 void Controller::Restore(const ProjectUiSettings& settings, const std::string& projectName, bool dirty)
 {
+#if defined(CARDENZA_NATIVE_UI)
+  NativeCancelGesture();
+  nativeFocusedCell_ = 0xFF;
+#endif
   ReleaseAllPads();
   state_.modals.clear();
   state_.track = std::min(settings.activeTrack, kTrackCount - 1);
@@ -206,6 +213,10 @@ bool Controller::IsPadDown(std::size_t row, std::size_t column) const
 
 bool Controller::IsNoteHeld(int note) const
 {
+#if defined(CARDENZA_NATIVE_UI)
+  for (const auto& contact : nativeContacts_)
+    if (contact.active && contact.baseNote == note && contact.track == state_.track) return true;
+#endif
   for (std::size_t index = 0; index < state_.padNote.size(); ++index)
     if (state_.padNote[index] == note && state_.padTrack[index] == state_.track) return true;
   return false;
@@ -213,6 +224,10 @@ bool Controller::IsNoteHeld(int note) const
 
 bool Controller::IsChordNoteHeld(int note) const
 {
+#if defined(CARDENZA_NATIVE_UI)
+  if (note >= 0 && note < 128 && (NativeNoteOwners(state_.track, static_cast<std::uint8_t>(note), false) != 0 ||
+      NativeNoteOwners(state_.track, static_cast<std::uint8_t>(note), true) != 0)) return true;
+#endif
   for (std::size_t index = 0; index < state_.padNote.size(); ++index)
   {
     if (state_.padNote[index] == kNoNote || state_.padTrack[index] != state_.track) continue;
@@ -226,6 +241,18 @@ bool Controller::IsChordNoteHeld(int note) const
 std::size_t Controller::CollectHeldNotes(std::array<std::uint8_t, kRows * kPadColumns>& notes) const
 {
   std::size_t count = 0;
+#if defined(CARDENZA_NATIVE_UI)
+  for (const auto& contact : nativeContacts_)
+  {
+    if (!contact.active || contact.track != state_.track) continue;
+    for (std::size_t voice = 0; voice < contact.count && count < notes.size(); ++voice)
+    {
+      const auto note = contact.notes[voice];
+      if (std::find(notes.begin(), notes.begin() + static_cast<std::ptrdiff_t>(count), note) == notes.begin() + static_cast<std::ptrdiff_t>(count))
+        notes[count++] = note;
+    }
+  }
+#endif
   for (std::size_t index = 0; index < state_.padNote.size(); ++index)
   {
     if (state_.padNote[index] == kNoNote || state_.padTrack[index] != state_.track) continue;
@@ -247,6 +274,10 @@ void Controller::SoundPad(std::size_t index, bool on)
   for (std::size_t voice = 0; voice < state_.padChordCount[index]; ++voice)
   {
     const std::uint8_t note = state_.padChord[index][voice];
+#if defined(CARDENZA_NATIVE_UI)
+    NativeSoundPerformance(track, note, state_.padVelocity[index], on, state_.padArp[index]);
+    continue;
+#endif
     if (state_.padArp[index])
     {
       if (on) sequencer.ArpNoteOn(track, note, state_.padVelocity[index]);
@@ -269,6 +300,17 @@ void Controller::SoundPad(std::size_t index, bool on)
 
 void Controller::AddHeldPadNotes(std::size_t track, std::array<std::uint32_t, 4>& notes) const
 {
+#if defined(CARDENZA_NATIVE_UI)
+  for (const auto& contact : nativeContacts_)
+  {
+    if (!contact.active || contact.track != track) continue;
+    for (std::size_t voice = 0; voice < contact.count; ++voice)
+    {
+      const auto note = contact.notes[voice];
+      notes[note / 32] |= 1u << (note % 32);
+    }
+  }
+#endif
   for (std::size_t index = 0; index < state_.padNote.size(); ++index)
   {
     if (state_.padNote[index] == kNoNote || state_.padTrack[index] != track) continue;
@@ -294,10 +336,18 @@ void Controller::ReleaseAllPads()
   for (std::size_t index = 0; index < state_.padNote.size(); ++index)
   {
     if (state_.padNote[index] == kNoNote) continue;
+#if defined(CARDENZA_NATIVE_UI)
+    state_.padNote[index] = kNoNote;
+    NativePublishPerformance();
+#endif
     SoundPad(index, false);
     state_.padNote[index] = kNoNote;
     state_.padChordCount[index] = 0;
   }
+#if defined(CARDENZA_NATIVE_UI)
+  NativePublishPerformance();
+  NativeReleasePerformance();
+#endif
 }
 
 void Controller::ShowToast(const std::string& text, ToastKind kind)
@@ -317,6 +367,10 @@ void Controller::KeyEvent(std::size_t row, std::size_t column, bool pressed, std
   state_.now = nowMs;
   const KeyRole role = RoleFor(row, column);
   if (role == KeyRole::None) return;
+#if defined(CARDENZA_NATIVE_UI)
+  if (host_.Sampler().SavingTrack() >= 0 && pressed) return;
+  if (pressed && role == KeyRole::Grid) nativeFocusedCell_ = 0xFF;
+#endif
   if (pressed) state_.keyPressedAt[KeyIndex(row, column)] = nowMs == 0 ? 1 : nowMs;
 
   // Text entry owns the whole keyboard except the left modifiers. Releases still settle key state
@@ -593,11 +647,20 @@ void Controller::PressPad(std::size_t row, std::size_t column)
     state_.padChordCount[index] = 0;  // edit only: nothing sounds, nothing to release
     return;
   }
+#if defined(CARDENZA_NATIVE_UI)
+  NativePublishPerformance();
+#endif
   SoundPad(index, true);
   // The arpeggiator records its own notes; straight notes are recorded here.
   if (!editing && !state_.padArp[index] && sequencer.RecordArmed() && sequencer.Playing())
   {
-    for (std::size_t voice = 0; voice < voices; ++voice) sequencer.RecordNoteOn(state_.track, chord[voice], velocity);
+    for (std::size_t voice = 0; voice < voices; ++voice)
+    {
+#if defined(CARDENZA_NATIVE_UI)
+      if (NativeNoteOwners(state_.track, chord[voice], false) > 1) continue;
+#endif
+      sequencer.RecordNoteOn(state_.track, chord[voice], velocity);
+    }
     MarkDirty();
   }
 }
@@ -608,9 +671,16 @@ void Controller::ReleasePad(std::size_t row, std::size_t column)
   if (state_.repeat.quickKey == KeyIndex(row, column)) state_.repeat = RepeatState{};
   const std::size_t index = PadIndex(row, column);
   if (state_.padNote[index] == kNoNote) return;
+#if defined(CARDENZA_NATIVE_UI)
+  state_.padNote[index] = kNoNote;
+  NativePublishPerformance();
+#endif
   SoundPad(index, false);
   state_.padNote[index] = kNoNote;
   state_.padChordCount[index] = 0;
+#if defined(CARDENZA_NATIVE_UI)
+  NativePublishPerformance();
+#endif
 }
 
 void Controller::PressGrid(std::size_t index)
@@ -851,6 +921,21 @@ void Controller::Tick(std::uint32_t nowMs)
   if (modal != nullptr && modal->kind == ModalKind::SampleRecord)
   {
     const auto sampler = host_.Sampler().BuildUiState(state_.track);
+#if defined(CARDENZA_NATIVE_UI)
+    if (sampler.saving) nativeSampleSaving_ = true;
+    else if (nativeSampleSaving_)
+    {
+      nativeSampleSaving_ = false;
+      if (!sampler.hasDraft && sampler.hasSample)
+      {
+        CloseModal();
+        MarkDirty();
+        ShowToast("SAVED " + sampler.sampleName, ToastKind::Ok);
+        return;
+      }
+      ShowToast(sampler.statusText, ToastKind::Error);
+    }
+#endif
     if (host_.EngineKind(state_.track) != synth::SynthEngineKind::Sampler) CloseModal();
     else if (sampler.needsName && !sampler.overwritePending && sampler.phase == synth::SamplerTrackPhase::Naming)
     {
@@ -858,6 +943,14 @@ void Controller::Tick(std::uint32_t nowMs)
       const std::string name = host_.Sampler().FreeTakeName();
       if (host_.Sampler().CommitDraftName(state_.track, name))
       {
+#if defined(CARDENZA_NATIVE_UI)
+        if (host_.Sampler().BuildUiState(state_.track).saving)
+        {
+          nativeSampleSaving_ = true;
+          ShowToast("SAVING " + name);
+          return;
+        }
+#endif
         CloseModal();
         MarkDirty();
         ShowToast("SAVED " + name, ToastKind::Ok);
@@ -879,6 +972,10 @@ void Controller::Tick(std::uint32_t nowMs)
 void Controller::GoToScene(Scene scene)
 {
   if (scene == state_.scene) return;
+#if defined(CARDENZA_NATIVE_UI)
+  NativeReleasePerformance();
+  nativeFocusedCell_ = 0xFF;
+#endif
   state_.modals.clear();
   host_.Sequencer().ClearSelectedSteps();
   state_.previousScene = state_.scene;
@@ -894,6 +991,10 @@ void Controller::SetPage(std::uint8_t page)
   if (count == 0) return;
   page = static_cast<std::uint8_t>(std::min<std::size_t>(page, count - 1));
   if (page == CurrentPage()) return;
+#if defined(CARDENZA_NATIVE_UI)
+  NativeReleasePerformance();
+  nativeFocusedCell_ = 0xFF;
+#endif
   if (state_.scene == Scene::Sequence) host_.Sequencer().ClearSelectedSteps();
   state_.page[static_cast<std::size_t>(state_.scene)] = page;
   if (state_.scene == Scene::Setup && page == kSetupFiles) RefreshProjects();
@@ -934,6 +1035,10 @@ void Controller::Back()
 void Controller::SelectTrack(std::size_t track)
 {
   if (track >= kTrackCount || track == state_.track) return;
+#if defined(CARDENZA_NATIVE_UI)
+  NativeReleasePerformance();
+  nativeFocusedCell_ = 0xFF;
+#endif
   state_.trackInstrumentPage[state_.track] = state_.page[static_cast<std::size_t>(Scene::Instrument)];
   state_.trackInstrumentFocus[state_.track] = state_.instrumentFocus;
   state_.track = track;
@@ -953,6 +1058,20 @@ void Controller::Adjust(int delta, bool coarse)
     ModalAdjust(delta, coarse);
     return;
   }
+#if defined(CARDENZA_NATIVE_UI)
+  if (state_.scene == Scene::Tape && CurrentPage() == kTapeMix && nativeFocusedCell_ < kGridCount && nativeFocusedCell_ / kGridColumns != 0)
+  {
+    const std::size_t track = nativeFocusedCell_ % kGridColumns;
+    const std::size_t row = nativeFocusedCell_ / kGridColumns;
+    const bool value = delta > 0;
+    bool changed = false;
+    if (row == 1 && host_.TrackMuted(track) != value) { host_.SetTrackMuted(track, value); changed = true; }
+    else if (row == 2 && host_.TrackSoloed(track) != value) { host_.SetTrackSoloed(track, value); changed = true; }
+    else if (row == 3 && host_.Sequencer().TrackEnabled(track) != value) { host_.Sequencer().SetTrackEnabled(track, value); changed = true; }
+    if (changed) MarkDirty();
+    return;
+  }
+#endif
   switch (state_.scene)
   {
     case Scene::Instrument: InstrumentAdjust(delta, coarse); break;

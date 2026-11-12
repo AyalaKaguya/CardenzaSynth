@@ -12,6 +12,11 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "sdkconfig.h"
+#if defined(CARDENZA_NATIVE_UI)
+#include "Devices/MosaicoNative/Microphone.h"
+#include "Devices/MosaicoNative/StorageBackend.h"
+#include "Devices/MosaicoNative/TouchBackend.h"
+#endif
 
 namespace {
 
@@ -24,6 +29,11 @@ std::atomic<std::uint32_t> g_elapsedMs{0};
 std::atomic<std::uint32_t> g_lateFrames{0};
 std::atomic<std::uint32_t> g_longestFrameMicros{0};
 bool g_registered = false;  // Init is called by the startup owner only.
+bool g_audioReplayEnabled = true;
+#if defined(CARDENZA_NATIVE_UI)
+std::atomic<std::uint32_t> g_nativeUi{0};
+std::atomic<std::uint32_t> g_nativePulse{0};
+#endif
 
 const char* TestStateName(AudioTestState state)
 {
@@ -71,6 +81,24 @@ esp_err_t StatusRpc(const esp_iris_rpc_request_t* request, std::uint8_t* respons
       TestStateName(g_testState.load(std::memory_order_acquire)), g_testCount.load(std::memory_order_relaxed));
   if (written < 0 || static_cast<std::size_t>(written) >= capacity) return ESP_ERR_INVALID_SIZE;
   *responseSize = static_cast<std::size_t>(written);
+#if defined(CARDENZA_NATIVE_UI)
+  const auto mic = mosaico::microphone::GetDiagnostics();
+  const auto ui = g_nativeUi.load(std::memory_order_relaxed);
+  const int extra = std::snprintf(reinterpret_cast<char*>(response) + written - 1, capacity - written + 1,
+      ",\"scene\":%u,\"page\":%u,\"track\":%u,\"modal\":%u,\"dirty\":%s"
+      ",\"playing\":%s,\"pulse\":%" PRIu32
+      ",\"touch_ready\":%s,\"storage_ready\":%s,\"storage_error\":%d,\"volume_bytes\":%" PRIu64
+      ",\"mic_recording\":%s,\"mic_frames\":%" PRIu32 ",\"mic_overflows\":%" PRIu32
+      ",\"mic_failures\":%" PRIu32 ",\"mic_peak\":%" PRIu32 "}",
+      static_cast<unsigned>(ui & 7u), static_cast<unsigned>((ui >> 3) & 31u),
+      static_cast<unsigned>((ui >> 8) & 3u), static_cast<unsigned>((ui >> 10) & 15u), ui & (1u << 14) ? "true" : "false",
+      ui & (1u << 15) ? "true" : "false", g_nativePulse.load(std::memory_order_relaxed),
+      mosaico::touch::Healthy() ? "true" : "false", Device::Storage::IsMounted() ? "true" : "false",
+      static_cast<int>(mosaico::storage::Error()), mosaico::storage::MountedVolumeBytes(),
+      mic.recording ? "true" : "false", mic.capturedFrames, mic.overflows, mic.readFailures, mic.peak);
+  if (extra < 0 || static_cast<std::size_t>(extra) >= capacity - written + 1) return ESP_ERR_INVALID_SIZE;
+  *responseSize = static_cast<std::size_t>(written - 1 + extra);
+#endif
   return ESP_OK;
 }
 
@@ -79,6 +107,7 @@ esp_err_t AudioTestRpc(const esp_iris_rpc_request_t* request, std::uint8_t* resp
 {
   constexpr char kAccepted[] = "{\"schema\":1,\"queued\":true}";
   *responseSize = 0;
+  if (!g_audioReplayEnabled) return ESP_ERR_NOT_SUPPORTED;
   if (request->payload_size != 0 || capacity < sizeof(kAccepted)) return ESP_ERR_INVALID_SIZE;
   if (g_frameCount.load(std::memory_order_acquire) == 0 || !mosaico::audio::Ready()) return ESP_ERR_INVALID_STATE;
   AudioTestState previous = g_testState.load(std::memory_order_acquire);
@@ -96,9 +125,10 @@ esp_err_t AudioTestRpc(const esp_iris_rpc_request_t* request, std::uint8_t* resp
 
 namespace mosaico::diagnostics {
 
-bool Init(bool startupAudioTestRunning)
+bool Init(bool startupAudioTestRunning, bool audioReplayEnabled)
 {
   if (g_registered) return true;
+  g_audioReplayEnabled = audioReplayEnabled;
   g_testState.store(startupAudioTestRunning ? AudioTestState::Running : AudioTestState::Idle, std::memory_order_release);
   esp_err_t result = esp_iris_rpc_register(kServiceId, kStatusMethod, StatusRpc, nullptr);
   if (result != ESP_OK)
@@ -141,5 +171,15 @@ void CompleteAudioTest(bool passed)
                                         std::memory_order_acq_rel))
     g_testCount.fetch_add(1, std::memory_order_relaxed);
 }
+
+#if defined(CARDENZA_NATIVE_UI)
+void PublishNativeUi(std::uint8_t scene, std::uint8_t page, std::uint8_t track,
+                     std::uint8_t modal, bool dirty, bool playing, std::uint32_t pulse)
+{
+  g_nativeUi.store((scene & 7u) | ((page & 31u) << 3) | ((track & 3u) << 8) |
+                  ((modal & 15u) << 10) | (dirty ? 1u << 14 : 0u) | (playing ? 1u << 15 : 0u), std::memory_order_relaxed);
+  g_nativePulse.store(pulse, std::memory_order_relaxed);
+}
+#endif
 
 }  // namespace mosaico::diagnostics

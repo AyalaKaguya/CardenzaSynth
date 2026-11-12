@@ -16,6 +16,12 @@
 - Do not start builds from the agent unless the user explicitly asks for one.
 - Prefer static validation such as `get_errors`, targeted searches, and diff inspection when editing the Cardenza HAL layer.
 
+### ESP-Mosaico target
+
+- `Devices/Mosaico` is a separate ESP32-S31 BSP backend. It keeps the original 240x135 UI at 1:1, uses BSP audio output, and intentionally has no keyboard, microphone or application filesystem in the minimal version. Other targets keep their existing behavior.
+- `tools/mosaico-vibe` pins the upstream workspace and its BSP/utils dependencies. Use the root `mosaico.py` launcher for its build/device workflows; see `Devices/Mosaico/README.md`. The user's selected SDK policy for this port is official ESP-IDF master, frozen at a verified SHA for a build, overriding the dependency's historical SDK pin. Preserve the existing OP-Ay1 workspace and SDK revisions when updating.
+- Preserve Mosaico's retained Vibe Mode ABI and partition prefix. Its system metadata is owned by the retained integration; the Cardenza SD-only application storage rules do not authorize replacing that system layout or introducing application persistence here. Device installation is a separate operation through the product CLI.
+
 ## Storage Rules
 
 The spec is `docs/app-storage-protocol.md`; keep it in sync with behaviour changes.

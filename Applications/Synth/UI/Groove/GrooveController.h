@@ -9,6 +9,10 @@
 #include "Applications/Synth/UI/Groove/GrooveHost.h"
 #include "Applications/Synth/UI/Groove/GrooveTypes.h"
 #include "Applications/Synth/UI/Groove/InstrumentPages.h"
+#if defined(CARDENZA_NATIVE_UI)
+#include <atomic>
+#include "Applications/Synth/UI/Groove/Native/NativeAction.h"
+#endif
 
 namespace groove {
 
@@ -471,6 +475,30 @@ struct UiState {
 
 };
 
+#if defined(CARDENZA_NATIVE_UI)
+enum class NativePresentationKind : std::uint8_t { CellPress, PerformanceNote, Overlay };
+
+struct NativePresentationEvent {
+  std::uint64_t serial = 0;
+  std::uint32_t at = 0;
+  NativePresentationKind kind = NativePresentationKind::CellPress;
+  std::uint8_t index = 0, track = 0, page = 0, modal = 0, overlayMask = 0;
+  Scene scene = Scene::Instrument;
+  std::uint8_t count = 0, velocity = 0;
+  bool active = false;
+  std::array<std::uint8_t, kMaxPadNotes> notes{};
+};
+
+// Presentation-only history. The system/UI task owns both writers and the
+// animator consumer; short down/up gestures survive until its next update.
+struct NativePresentationEvents {
+  std::array<NativePresentationEvent, 16> history{};
+  std::uint64_t serial = 0;
+  std::uint32_t lastInputAt = 0;
+  std::array<bool, 4> overlays{};  // scenes, tracks, menu, pages
+};
+#endif
+
 class Controller {
 public:
   explicit Controller(Host& host);
@@ -480,6 +508,17 @@ public:
   ProjectUiSettings Settings() const;
 
   void KeyEvent(std::size_t row, std::size_t column, bool pressed, std::uint32_t nowMs);
+#if defined(CARDENZA_NATIVE_UI)
+  // Native pointer input uses domain commands; physical keyboard input remains
+  // routed through KeyEvent. True means accepted input/activity, not project dirty.
+  bool Dispatch(const native::Command& command, std::uint32_t nowMs);
+  std::uint8_t NativeFocusedCell() const { return nativeFocusedCell_; }
+  bool NativePerformanceHeld(std::size_t track, std::uint8_t note) const;
+  void NotifyNativeInput(std::uint32_t nowMs);
+  void NotifyNativeCellPress(std::size_t index, std::uint32_t nowMs);
+  void NotifyNativeOverlay(std::size_t index, bool active, std::uint32_t nowMs);
+  const NativePresentationEvents& NativePresentation() const { return nativePresentation_; }
+#endif
   void Tick(std::uint32_t nowMs);
   // What ENTER on a project in FILES does: with unsaved changes it asks first.
   void OpenProject(std::string name);
@@ -599,6 +638,33 @@ public:
   bool IsChordNoteHeld(int note) const;
 
 private:
+#if defined(CARDENZA_NATIVE_UI)
+  bool NativeFocusCell(std::size_t index);
+  void NativeEnter();
+  void NativeCancelGesture();
+  void SaveProjectAutomatic();
+  std::uint8_t nativeFocusedCell_ = 0xFF;
+  bool nativeSampleSaving_ = false;
+  NativePresentationEvents nativePresentation_{};
+  void RecordNativePresentation(NativePresentationEvent event);
+  void NotifyNativePerformance(std::size_t track, const std::uint8_t* notes, std::size_t count,
+                               std::uint8_t velocity, std::uint32_t nowMs);
+  struct NativeContact {
+    bool active = false;
+    std::uint8_t id = 0, track = 0, baseNote = 0, count = 0, velocity = 0;
+    bool arp = false;
+    std::array<std::uint8_t, kMaxPadNotes> notes{};
+  };
+  std::array<NativeContact, 16> nativeContacts_{};
+  // Read by the sequencer clock task; the UI alone owns the contact/pad arrays.
+  std::array<std::array<std::atomic<std::uint32_t>, 4>, kTrackCount> nativeDirectHeld_{};
+  void NativePublishPerformance();
+  bool NativeNoteDown(std::uint8_t contact, std::uint8_t note, std::uint8_t velocity);
+  bool NativeNoteUp(std::uint8_t contact);
+  void NativeReleasePerformance();
+  std::size_t NativeNoteOwners(std::size_t track, std::uint8_t note, bool arp) const;
+  void NativeSoundPerformance(std::size_t track, std::uint8_t note, std::uint8_t velocity, bool on, bool arp);
+#endif
   // Input routing
   void PressLeft(std::size_t row);
   void ReleaseLeft(std::size_t row);

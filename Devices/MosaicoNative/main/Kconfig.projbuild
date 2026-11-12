@@ -1,0 +1,8 @@
+menu "Mosaico Native"
+    config CARDENZA_NATIVE_MIC_SLOT
+        int "ES8311 active microphone I2S slot"
+        range 0 1
+        default 0
+        help
+            Select the board's ADC slot without averaging a valid slot with silence.
+endmenu

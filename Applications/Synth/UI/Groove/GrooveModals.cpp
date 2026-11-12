@@ -36,6 +36,9 @@ Modal* Controller::Top()
 
 void Controller::OpenModal(Modal modal)
 {
+#if defined(CARDENZA_NATIVE_UI)
+  NativeReleasePerformance();
+#endif
   // Modals never stack more than three deep (list -> options -> text / confirm).
   if (state_.modals.size() >= 3) state_.modals.erase(state_.modals.begin());
   state_.modals.push_back(std::move(modal));
@@ -48,6 +51,16 @@ void Controller::CloseModal()
 
 void Controller::OpenTextEntry(TextPurpose purpose, const std::string& title, const std::string& initial, std::size_t maxLength)
 {
+#if defined(CARDENZA_NATIVE_UI)
+  // Native saves choose a free name. Search and rename require text input and
+  // are deliberately unavailable until an external keyboard is connected.
+  (void)purpose;
+  (void)title;
+  (void)initial;
+  (void)maxLength;
+  ShowToast("TEXT INPUT NOT CONNECTED");
+  return;
+#else
   Modal modal;
   modal.kind = ModalKind::TextEntry;
   modal.textPurpose = purpose;
@@ -59,6 +72,7 @@ void Controller::OpenTextEntry(TextPurpose purpose, const std::string& title, co
   modal.text = text.substr(0, maxLength);
   modal.textCursor = modal.text.size();
   OpenModal(std::move(modal));
+#endif
 }
 
 void Controller::OpenConfirm(ConfirmPurpose purpose, const std::string& title, const std::string& detail, bool danger, const std::string& payload)
@@ -313,9 +327,13 @@ void Controller::ModalEnter()
       const std::string file = modal->payload;
       if (action == "rename")
       {
+#if defined(CARDENZA_NATIVE_UI)
+        ShowToast("RENAME NOT AVAILABLE");
+#else
         const auto dot = file.rfind('.');
         OpenTextEntry(TextPurpose::SampleRename, "RENAME SAMPLE", dot == std::string::npos ? file : file.substr(0, dot), 18);
         Top()->payload = file;
+#endif
       }
       else OpenConfirm(ConfirmPurpose::DeleteSample, "DELETE " + Upper(file) + "?", "THE WAV FILE IS REMOVED FROM THE CARD", true, file);
       return;
@@ -352,7 +370,11 @@ void Controller::ModalFnEnter()
   options.kind = ModalKind::SampleOptions;
   options.title = modal->items[modal->cursor].label;
   options.payload = modal->items[modal->cursor].id;
+#if defined(CARDENZA_NATIVE_UI)
+  options.items = {{"delete", "DELETE", false}};
+#else
   options.items = {{"rename", "RENAME", false}, {"delete", "DELETE", false}};
+#endif
   OpenModal(std::move(options));
 }
 

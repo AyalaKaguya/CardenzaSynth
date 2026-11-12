@@ -1,0 +1,9 @@
+dependencies:
+  idf: ">=6.2"
+  esp-mosaico-bsp:
+    override_path: "../../../tools/mosaico-vibe/submodule/esp-mosaico-bsp/components/esp-mosaico-bsp"
+  esp_iris:
+    override_path: "../../../tools/mosaico-vibe/submodule/esp-mosaico-utils/ESP-Iris/components/esp_iris"
+  joltwallet/littlefs: "==1.23.1"
+  espressif/esp_lcd_touch_cst9220: "==0.1.1"
+  espressif/tinyusb: "==0.21.0~4"

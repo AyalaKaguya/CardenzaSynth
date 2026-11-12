@@ -41,6 +41,11 @@ struct SamplerTrackUiState {
   bool overwritePending = false;
   bool deleteConfirm = false;
   bool previewing = false;
+#if defined(CARDENZA_NATIVE_UI)
+  bool saving = false;
+  float savingProgress = 0;
+  bool waveformPending = false;
+#endif
 };
 
 }  // namespace synth

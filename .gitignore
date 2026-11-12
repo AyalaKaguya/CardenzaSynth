@@ -56,6 +56,8 @@ logs/
 Devices/Cardenza/managed_components/
 Devices/Mosaico/managed_components/
 Devices/Mosaico/sdkconfig
+Devices/MosaicoNative/managed_components/
+Devices/MosaicoNative/sdkconfig
 __pycache__/
 
 # Local agent planning notes (project rules stay tracked)

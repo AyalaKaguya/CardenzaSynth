@@ -1,6 +1,9 @@
 #include "Devices/Mosaico/AudioBackend.h"
 #include "Devices/Device.h"
 #include "Devices/DeviceAudio.h"
+#if defined(CARDENZA_NATIVE_UI)
+#include "Devices/MosaicoNative/Microphone.h"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -133,7 +136,12 @@ void RenderBlock()
 
 void PrepareStereo(std::int32_t& previousGain)
 {
-  const std::int32_t target = g_muted.load(std::memory_order_relaxed) ? 0 :
+  const bool muted = g_muted.load(std::memory_order_relaxed)
+#if defined(CARDENZA_NATIVE_UI)
+      || mosaico::microphone::OutputMuted()
+#endif
+      ;
+  const std::int32_t target = muted ? 0 :
       g_outputGain.load(std::memory_order_relaxed);
   for (std::size_t frame = 0; frame < kBlockFrames; ++frame)
   {
@@ -194,6 +202,10 @@ void AudioTask(void*)
         retryAt = esp_timer_get_time() + kRetryMicros;
       }
     }
+
+#if defined(CARDENZA_NATIVE_UI)
+    mosaico::microphone::ServiceControl(g_outputReady.load(std::memory_order_acquire));
+#endif
 
     const bool ready = g_outputReady.load(std::memory_order_relaxed);
     if (!ready) PaceWithoutOutput(drainStarted, drainFrames);
@@ -297,6 +309,14 @@ void SetOutputVolume(std::uint8_t percent)
 }
 std::uint8_t OutputVolume() { return g_outputVolume.load(std::memory_order_relaxed); }
 InputStreamInfo InputInfo() { return {}; }
+#if defined(CARDENZA_NATIVE_UI)
+InputStatus StartInput() { return mosaico::microphone::Start(); }
+void StopInput() { mosaico::microphone::Stop(); }
+InputStatus ReadInputFrames(std::int16_t* destination, std::size_t frameCount, std::size_t& framesRead, std::uint32_t timeoutMs)
+{
+  return mosaico::microphone::Read(destination, frameCount, framesRead, timeoutMs);
+}
+#else
 InputStatus StartInput() { return InputStatus::NotReady; }
 void StopInput() {}
 InputStatus ReadInputFrames(std::int16_t* destination, std::size_t frameCount, std::size_t& framesRead, std::uint32_t)
@@ -304,6 +324,7 @@ InputStatus ReadInputFrames(std::int16_t* destination, std::size_t frameCount, s
   framesRead = 0;
   return destination == nullptr && frameCount != 0 ? InputStatus::InvalidArgument : InputStatus::NotReady;
 }
+#endif
 std::size_t ReadComputerAudio(std::int16_t*, std::size_t) { return 0; }
 RenderTiming Timing()
 {

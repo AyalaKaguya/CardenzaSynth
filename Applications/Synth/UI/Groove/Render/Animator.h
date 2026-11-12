@@ -91,6 +91,7 @@ public:
   float MeterPeak(std::size_t track) const { return meterPeak_[track]; }
   // Endings.
   std::uint32_t OverlayClosedAt(std::size_t index) const { return overlayClosedAt_[index]; }
+  bool OverlayActive(std::size_t index) const { return index < overlay_.size() && overlay_[index]; }
   const Modal* ClosingModal() const { return closingModalAt_ != 0 && now_ - closingModalAt_ < kModalCloseMs ? &closingModal_ : nullptr; }
   std::uint32_t ClosingModalAt() const { return closingModalAt_; }
   std::uint32_t ToastEndedAt() const { return toastEndedAt_; }
@@ -105,6 +106,16 @@ public:
   // Exponential smoothing toward `target`, keyed by any stable id; ~70 ms time constant by default.
   float Smooth(std::uint32_t key, float target, float timeConstantMs = 70.0f);
   static std::uint32_t Key(const char* text, std::uint32_t salt = 0);
+
+#if defined(CARDENZA_NATIVE_UI)
+  // Presentation notifications share the existing animation clocks. They do
+  // not synthesize controller keys, note ownership or project mutations.
+  void NotifyCellPress(std::size_t index, std::uint32_t now);
+  void NotifyPerformanceNote(std::size_t track, const std::uint8_t* notes, std::size_t count,
+                             std::uint8_t velocity, std::uint32_t now);
+  void NotifyOverlay(std::size_t index, bool active, std::uint32_t now);
+  void NotifyInput(std::uint32_t now);
+#endif
 
 private:
 
@@ -191,6 +202,12 @@ private:
   std::array<std::uint32_t, kGridCount> deselectedAt_{};
 
   std::array<SmoothEntry, 96> smooth_{};
+#if defined(CARDENZA_NATIVE_UI)
+  void ConsumeNativePresentation(const Controller& controller);
+  std::uint64_t nativePresentationSerial_ = 0;
+  std::uint32_t lastInputAt_ = 0;
+  bool nativeDrumTrack_ = false;
+#endif
 };
 
 }  // namespace groove

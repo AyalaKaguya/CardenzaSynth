@@ -137,6 +137,19 @@ LRESULT DesktopSimulator::HandleMessage(UINT message, WPARAM wParam, LPARAM lPar
 {
   switch (message)
   {
+#if defined(CARDENZA_NATIVE_UI)
+    case WM_KILLFOCUS:
+      Device::Touch::CancelAll();
+      touchCaptured_ = false;
+      return 0;
+    case WM_CAPTURECHANGED:
+      if (touchCaptured_)
+      {
+        touchCaptured_ = false;
+        Device::Touch::CancelAll();
+      }
+      return 0;
+#endif
     case WM_PAINT:
       OnPaint();
       return 0;

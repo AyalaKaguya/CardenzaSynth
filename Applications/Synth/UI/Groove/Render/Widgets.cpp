@@ -63,61 +63,109 @@ Rect CellSpan(std::size_t row, std::size_t column, std::size_t rows, std::size_t
 
 void ParamCell(Gfx& g, const Rect& rect, std::string_view label, std::string_view value, float fraction, CellStyle style)
 {
-  const bool focused = style == CellStyle::Focused;
-  const bool disabled = style == CellStyle::Disabled;
+  ParamCell(g, rect, label, value, fraction, style == CellStyle::Focused, style == CellStyle::Disabled, {});
+}
+
+void ParamCell(Gfx& g, const Rect& rect, std::string_view label, std::string_view value, float fraction,
+               bool focused, bool disabled, const ParamCellLayout& layout)
+{
+  const int textX = rect.x + layout.paddingX;
+  const int textWidth = rect.width - layout.paddingX - layout.rightPadding;
   if (focused)
   {
-    g.Fill(Rect{rect.x, rect.y, rect.width, 10}, kInk);
-    g.TextFit(rect.x + 3, rect.y + 2, rect.width - 5, label, kBlack);
-    g.VLine(rect.x, rect.y + 10, rect.height - 10, kInk);
+    g.Fill(Rect{rect.x, rect.y, rect.width, layout.labelHeight}, kInk);
+    g.TextFit(textX, rect.y + layout.labelY, textWidth, label, kBlack, layout.labelFont);
+    g.VLine(rect.x, rect.y + layout.labelHeight, rect.height - layout.labelHeight, kInk);
   }
   else
   {
-    g.TextFit(rect.x + 3, rect.y + 2, rect.width - 5, label, disabled ? kFaint : kDim);
+    g.TextFit(textX, rect.y + layout.labelY, textWidth, label, disabled ? kFaint : kDim, layout.labelFont);
   }
-  g.TextFit(rect.x + 3, rect.y + 12, rect.width - 5, value, disabled ? kFaint : kInk, Font::Small);
+  g.TextFit(textX, rect.y + layout.valueY, textWidth, value, disabled ? kFaint : kInk, layout.valueFont);
   if (fraction >= 0.0f)
   {
-    LevelBar(g, Rect{rect.x + 3, rect.y + rect.height - 2, rect.width - 5, 2}, fraction, disabled ? kFaint : kInk, kFaint);
+    LevelBar(g, Rect{textX, rect.y + rect.height - layout.barBottom, textWidth, layout.barHeight}, fraction,
+             disabled ? kFaint : kInk, kFaint);
   }
 }
 
 void ParamCell(Gfx& g, const Rect& rect, std::string_view label, std::string_view value, float fraction, CellStyle style,
                float flash, std::uint32_t now, bool ants)
 {
-  ParamCell(g, rect, label, value, fraction, style);
-  if (ants && style == CellStyle::Focused) fx::MarchingAnts(g, Rect{rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2}, kInk, now);
+  ParamCell(g, rect, label, value, fraction, style == CellStyle::Focused, style == CellStyle::Disabled, {}, flash, now, ants);
+}
+
+void ParamCell(Gfx& g, const Rect& rect, std::string_view label, std::string_view value, float fraction,
+               bool focused, bool disabled, const ParamCellLayout& layout, float flash, std::uint32_t now, bool ants)
+{
+  ParamCell(g, rect, label, value, fraction, focused, disabled, layout);
+  if (ants && focused) fx::MarchingAnts(g, Rect{rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2}, kInk, now);
   if (flash <= 0.0f) return;
   // Fresh edit: the value pops inverse, then an underline glow fades out.
-  const Rect valueBox{rect.x + 1, rect.y + 11, std::min(rect.width - 2, Gfx::Measure(value, Font::Small) + 4), 11};
+  const int valueHeight = Gfx::CapHeight(layout.valueFont) + 2;
+  const Rect valueBox{rect.x + 1, rect.y + layout.valueY - 1,
+      std::min(rect.width - 2, Gfx::Measure(value, layout.valueFont) + 4), valueHeight};
   if (flash > 0.62f)
   {
     g.Fill(valueBox, kInk);
-    g.TextFit(rect.x + 3, rect.y + 12, rect.width - 5, value, kBlack, Font::Small);
+    g.TextFit(rect.x + layout.paddingX, rect.y + layout.valueY,
+        rect.width - layout.paddingX - layout.rightPadding, value, kBlack, layout.valueFont);
   }
   else g.Dither(Rect{valueBox.x, valueBox.y + valueBox.height - 1, valueBox.width, 2}, kInk, static_cast<int>(flash * 20.0f));
 }
 
+void DottedFrame(Gfx& g, const Rect& rect, Color color)
+{
+  g.DottedHLine(rect.x, rect.y, rect.width, color);
+  g.DottedHLine(rect.x, rect.y + rect.height - 1, rect.width, color);
+  g.DottedVLine(rect.x, rect.y, rect.height, color);
+  g.DottedVLine(rect.x + rect.width - 1, rect.y, rect.height, color);
+}
+
 void ActionCell(Gfx& g, const Rect& rect, std::string_view label, bool pressed, Color accent)
 {
+  ActionCell(g, rect, label, {}, false, pressed, true, accent, {});
+}
+
+void ActionCell(Gfx& g, const Rect& rect, std::string_view label, std::string_view detail,
+                bool focused, bool pressed, bool available, Color accent, const ActionCellLayout& layout,
+                float flash, std::uint32_t now)
+{
+  const int y = layout.labelY >= 0 ? rect.y + layout.labelY : rect.y + (rect.height - 7) / 2;
   if (pressed)
   {
     g.Fill(rect, accent);
-    g.TextFit(rect.x + 4, rect.y + (rect.height - 7) / 2, rect.width - 8, label, kBlack);
+    g.TextFit(rect.x + layout.padding, y, rect.width - layout.padding * 2, label, kBlack, layout.labelFont);
+    if (layout.detailBottom > 0 && !detail.empty())
+      g.TextFit(rect.x + layout.padding, rect.y + rect.height - layout.detailBottom,
+          rect.width - layout.padding * 2, detail, kBlack, layout.detailFont);
     return;
   }
-  g.DottedHLine(rect.x, rect.y, rect.width, kFaint);
-  g.DottedHLine(rect.x, rect.y + rect.height - 1, rect.width, kFaint);
-  g.DottedVLine(rect.x, rect.y, rect.height, kFaint);
-  g.DottedVLine(rect.x + rect.width - 1, rect.y, rect.height, kFaint);
-  const int y = rect.y + (rect.height - 7) / 2;
-  // Long labels keep their text and drop the arrow.
-  if (Gfx::Measure(label) > rect.width - 14)
+  DottedFrame(g, rect, available ? kFaint : kShade);
+  const bool band = focused && layout.focusBandHeight > 0;
+  if (band)
   {
-    g.TextFit(rect.x + 4, y, rect.width - 6, label, kInk);
+    g.Fill(Rect{rect.x, rect.y, rect.width, layout.focusBandHeight}, kInk);
+    g.VLine(rect.x, rect.y + layout.focusBandHeight, rect.height - layout.focusBandHeight, kInk);
+  }
+  if (layout.detailBottom > 0)
+  {
+    g.TextFit(rect.x + layout.padding, y, rect.width - layout.padding * 2, label,
+        band ? kBlack : available ? kInk : kFaint, layout.labelFont);
+    g.TextFit(rect.x + layout.padding, rect.y + rect.height - layout.detailBottom, rect.width - layout.padding * 2 - 7,
+        detail, available ? kDim : kFaint, layout.detailFont);
+    if (available) g.Text(rect.x + rect.width - 11, rect.y + rect.height - layout.detailBottom + 1, ">", accent);
+    if (flash > 0.0f) fx::Ripple(g, rect, 1.0f - flash, accent);
+    (void)now;
     return;
   }
-  g.Text(rect.x + 4, y, label, kInk);
+  // Long labels keep their text and drop the arrow.
+  if (Gfx::Measure(label, layout.labelFont) > rect.width - 14)
+  {
+    g.TextFit(rect.x + layout.padding, y, rect.width - 6, label, available ? kInk : kFaint, layout.labelFont);
+    return;
+  }
+  g.Text(rect.x + layout.padding, y, label, available ? kInk : kFaint, layout.labelFont);
   g.Text(rect.x + rect.width - 9, y, ">", accent);
 }
 
@@ -336,8 +384,9 @@ void BipolarBar(Gfx& g, const Rect& rect, float value, Color on, Color off)
   g.VLine(centre, rect.y - 1, rect.height + 2, kDim);
 }
 
-void Dx7Algorithm(Gfx& g, const Rect& rect, int algorithm, int highlightOperator, int feedback, float activity, std::uint32_t now)
+void Dx7Algorithm(Gfx& g, const Rect& rect, int algorithm, int highlightOperator, int feedback, float activity, std::uint32_t now, int scale)
 {
+  scale = Clamp(scale, 1, 3);
   const auto& algo = kAlgorithms[static_cast<std::size_t>(Clamp(algorithm, 1, 32) - 1)];
   std::array<bool, 7> carrier{};
   for (const char* c = algo.carriers; *c != 0; ++c) carrier[static_cast<std::size_t>(*c - '0')] = true;
@@ -393,14 +442,19 @@ void Dx7Algorithm(Gfx& g, const Rect& rect, int algorithm, int highlightOperator
   for (int op = 1; op <= 6; ++op)
     if (carrier[static_cast<std::size_t>(op)]) layout(layout, op);
 
-  const int boxWidth = 11;
-  const int boxHeight = 9;
+  const int boxWidth = 11 * scale;
+  const int boxHeight = 9 * scale;
   const float columns = std::max(1.0f, cursor);
-  const int rowStep = std::min(boxHeight + 6, (rect.height - boxHeight - 4) / std::max(1, maxLevel));
+  const int rowStep = scale == 1 ? std::min(boxHeight + 6, (rect.height - boxHeight - 4) / std::max(1, maxLevel)) :
+      std::min(22 * scale, std::max(1, (rect.height - boxHeight - 10 * scale) / std::max(1, maxLevel)));
+  const int treeHeight = boxHeight + maxLevel * rowStep;
+  const int bottom = scale == 1 ? rect.y + rect.height - 4 - boxHeight :
+      rect.y + (rect.height - treeHeight - 6 * scale) / 2 + maxLevel * rowStep;
+  const int busY = scale == 1 ? rect.y + rect.height - 2 : bottom + boxHeight + 4 * scale;
+  const Font numberFont = scale >= 3 ? Font::Huge : scale == 2 ? Font::Large : Font::Micro;
   auto boxRect = [&](int op) {
     const float unit = static_cast<float>(rect.width) / columns;
     const int cx = rect.x + static_cast<int>((slot[static_cast<std::size_t>(op)] + 0.5f) * unit);
-    const int bottom = rect.y + rect.height - 4 - boxHeight;
     return Rect{cx - boxWidth / 2, bottom - level[static_cast<std::size_t>(op)] * rowStep, boxWidth, boxHeight};
   };
 
@@ -413,9 +467,9 @@ void Dx7Algorithm(Gfx& g, const Rect& rect, int algorithm, int highlightOperator
     const Rect box = boxRect(op);
     busLeft = std::min(busLeft, box.x + box.width / 2);
     busRight = std::max(busRight, box.x + box.width / 2);
-    g.VLine(box.x + box.width / 2, box.y + box.height, rect.y + rect.height - 2 - (box.y + box.height), kDim);
+    g.VLine(box.x + box.width / 2, box.y + box.height, busY - (box.y + box.height), kDim);
   }
-  if (busRight >= busLeft) g.HLine(busLeft, rect.y + rect.height - 2, busRight - busLeft + 1, activity > 0.02f ? kTab : kDim);
+  if (busRight >= busLeft) g.HLine(busLeft, busY, busRight - busLeft + 1, activity > 0.02f ? kTab : kDim);
 
   for (std::size_t index = 0; index < edgeCount; ++index)
   {
@@ -432,13 +486,13 @@ void Dx7Algorithm(Gfx& g, const Rect& rect, int algorithm, int highlightOperator
         const float t = std::fmod(static_cast<float>(now) / 420.0f + static_cast<float>(index) * 0.37f, 1.0f);
         const int dx = x0 + static_cast<int>(static_cast<float>(x1 - x0) * t);
         const int dy = y0 + static_cast<int>(static_cast<float>(y1 - y0) * t);
-        g.Fill(Rect{dx - 1, dy - 1, 2, 2}, kTab);
+        g.Fill(Rect{dx - scale, dy - scale, 2 * scale, 2 * scale}, kTab);
       }
     }
     else
     {
       // Cross routing (shared modulators, loop feedback): dotted side path.
-      const int sideX = std::max(from.x, to.x) + boxWidth + 2;
+      const int sideX = std::max(from.x, to.x) + boxWidth + 2 * scale;
       g.DottedHLine(from.x + boxWidth, from.y + boxHeight / 2, sideX - from.x - boxWidth, kDim);
       g.DottedVLine(sideX, std::min(from.y, to.y) + boxHeight / 2, std::abs(to.y - from.y), kDim);
       g.DottedHLine(to.x + boxWidth, to.y + boxHeight / 2, sideX - to.x - boxWidth, kDim);
@@ -452,25 +506,28 @@ void Dx7Algorithm(Gfx& g, const Rect& rect, int algorithm, int highlightOperator
     const bool highlighted = op == highlightOperator;
     const char digit[2] = {static_cast<char>('0' + op), 0};
     if (isCarrier && activity > 0.02f)
-      g.Dither(Rect{box.x - 2, box.y - 2, box.width + 4, box.height + 4}, kTab, static_cast<int>(std::min(1.0f, activity) * 10.0f));
+      g.Dither(Rect{box.x - 2 * scale, box.y - 2 * scale, box.width + 4 * scale, box.height + 4 * scale}, kTab,
+               static_cast<int>(std::min(1.0f, activity) * 10.0f));
     if (isCarrier)
     {
       g.Fill(box, highlighted ? kTab : kInk);
-      g.Text(box.x + 3, box.y + 1, digit, kBlack);
+      g.Text(scale == 1 ? box.x + 3 : box.x + (box.width - Gfx::Measure(digit, numberFont)) / 2,
+             scale == 1 ? box.y + 1 : box.y + (box.height - Gfx::CapHeight(numberFont)) / 2, digit, kBlack, numberFont);
     }
     else
     {
       g.Fill(box, kBlack);
       g.Stroke(box, highlighted ? kTab : kDim);
-      g.Text(box.x + 3, box.y + 1, digit, highlighted ? kTab : kInk);
+      g.Text(scale == 1 ? box.x + 3 : box.x + (box.width - Gfx::Measure(digit, numberFont)) / 2,
+             scale == 1 ? box.y + 1 : box.y + (box.height - Gfx::CapHeight(numberFont)) / 2, digit, highlighted ? kTab : kInk, numberFont);
     }
     if (selfFeedback[static_cast<std::size_t>(op)])
     {
       // Feedback loop: a small hook over the top-right corner, brighter with more feedback.
       const Color loop = feedback > 0 ? kInk : kFaint;
-      g.HLine(box.x + box.width / 2, box.y - 2, box.width / 2 + 3, loop);
-      g.VLine(box.x + box.width + 2, box.y - 2, box.height / 2 + 2, loop);
-      g.HLine(box.x + box.width, box.y + box.height / 2, 2, loop);
+      g.HLine(box.x + box.width / 2, box.y - 2 * scale, box.width / 2 + 3 * scale, loop);
+      g.VLine(box.x + box.width + 2 * scale, box.y - 2 * scale, box.height / 2 + 2 * scale, loop);
+      g.HLine(box.x + box.width, box.y + box.height / 2, 2 * scale, loop);
     }
   }
 }

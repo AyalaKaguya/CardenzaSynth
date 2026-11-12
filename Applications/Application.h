@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "Devices/Device.h"
 
 namespace app {
 
@@ -32,6 +33,7 @@ public:
   virtual void HandleHomeButtonEvent(bool pressed) {
     (void)pressed;
   }
+  virtual void HandleTouchEvent(const Device::Touch::Event&) {}
 };
 
 using ApplicationFactory = std::unique_ptr<Application> (*)();

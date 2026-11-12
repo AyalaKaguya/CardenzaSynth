@@ -26,6 +26,16 @@ void DesktopSimulator::OnLeftButtonDown(int x, int y)
 {
   const POINT point{x, y};
   UpdateLayout();
+#if defined(CARDENZA_NATIVE_UI)
+  if (PointInRect(screenRect_, point))
+  {
+    touchCaptured_ = true;
+    lastTouch_ = {static_cast<LONG>((x - screenRect_.left) / scale_), static_cast<LONG>((y - screenRect_.top) / scale_)};
+    Input::SendTouch({Device::Touch::Kind::Down, 0, static_cast<std::int16_t>(lastTouch_.x), static_cast<std::int16_t>(lastTouch_.y)});
+    SetCapture(hwnd_);
+    return;
+  }
+#endif
 
   for (std::size_t index = 0; index < scaleButtons_.size(); ++index)
   {
@@ -79,6 +89,14 @@ void DesktopSimulator::OnLeftButtonDown(int x, int y)
 
 void DesktopSimulator::OnMouseMove(int x, int y, UINT flags)
 {
+#if defined(CARDENZA_NATIVE_UI)
+  if (touchCaptured_)
+  {
+    lastTouch_ = {static_cast<LONG>((x - screenRect_.left) / scale_), static_cast<LONG>((y - screenRect_.top) / scale_)};
+    Input::SendTouch({Device::Touch::Kind::Move, 0, static_cast<std::int16_t>(lastTouch_.x), static_cast<std::int16_t>(lastTouch_.y)});
+    return;
+  }
+#endif
   if ((flags & MK_LBUTTON) == 0 || capturedKey_ < 0)
   {
     return;
@@ -121,6 +139,15 @@ void DesktopSimulator::OnMouseMove(int x, int y, UINT flags)
 
 void DesktopSimulator::OnLeftButtonUp()
 {
+#if defined(CARDENZA_NATIVE_UI)
+  if (touchCaptured_)
+  {
+    touchCaptured_ = false;
+    Input::SendTouch({Device::Touch::Kind::Up, 0, static_cast<std::int16_t>(lastTouch_.x), static_cast<std::int16_t>(lastTouch_.y)});
+    ReleaseCapture();
+    return;
+  }
+#endif
   if (capturedKey_ < 0)
   {
     return;

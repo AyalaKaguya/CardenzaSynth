@@ -112,6 +112,7 @@ if(CARDENZA_GROOVE_UI)
   target_link_libraries(CardenzaAppLifecycleTests PRIVATE CardenzaSystem CardenzaSimDevice)
   add_test(NAME CardenzaAppLifecycleTests COMMAND CardenzaAppLifecycleTests)
   add_test(NAME CardenzaNoCardLifecycleTests COMMAND CardenzaAppLifecycleTests --no-card)
+  add_test(NAME CardenzaVolatileBootTests COMMAND CardenzaAppLifecycleTests --volatile-no-card)
   list(APPEND cardenza_ui_tests CardenzaAppLifecycleTests)
 endif()
 

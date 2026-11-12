@@ -98,6 +98,10 @@ private:
   int scale_ = kDefaultScale;
   int capturedKey_ = -1;
   int dragMenuIndex_ = -1;
+#if defined(CARDENZA_NATIVE_UI)
+  bool touchCaptured_ = false;
+  POINT lastTouch_{};
+#endif
   ULONGLONG lastFrameTick_ = 0;
   apps::SimulatedApp* synthApp_ = nullptr;
   DebugScriptOptions debugOptions_{};

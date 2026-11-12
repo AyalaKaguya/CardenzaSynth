@@ -9,6 +9,13 @@
 #include <sys/stat.h>
 
 #include "OS/Storage/Storage.h"
+#if defined(CARDENZA_NATIVE_UI)
+#include <atomic>
+#include <chrono>
+#include <mutex>
+#include <thread>
+#include "Devices/Device.h"
+#endif
 
 namespace os::storage {
 
@@ -167,7 +174,13 @@ std::string FormatSettings(const std::vector<SettingsEntry>& entries, std::strin
   return text;
 }
 
-Settings::Settings(std::string scope, std::string path) : scope_(std::move(scope)), path_(std::move(path)) {}
+Settings::Settings(std::string scope, std::string path) : scope_(std::move(scope)), path_(std::move(path))
+{
+#if defined(CARDENZA_NATIVE_UI)
+  static std::atomic<std::uint64_t> nextIdentity{1};
+  nativeIdentity_ = nextIdentity.fetch_add(1, std::memory_order_relaxed);
+#endif
+}
 
 std::string Settings::FileHeader() const
 {
@@ -177,6 +190,10 @@ std::string Settings::FileHeader() const
 
 void Settings::Load()
 {
+#if defined(CARDENZA_NATIVE_UI)
+  DrainSettingsWriteBehind();
+  ++nativeLoadEpoch_;
+#endif
   entries_.clear();
   edits_.clear();
   dirty_ = false;
@@ -186,6 +203,9 @@ void Settings::Load()
 
 bool Settings::RefreshFromCard()
 {
+#if defined(CARDENZA_NATIVE_UI)
+  DrainSettingsWriteBehind();
+#endif
   std::vector<SettingsEntry> refreshed;
   if (!ReadCardSettings(path_, refreshed)) return false;
   ApplyEdits(refreshed);
@@ -243,6 +263,12 @@ void Settings::RecordEdit(std::string_view key, std::string_view value, bool rem
     edit->removed = removed;
   }
   else edits_.push_back({std::string(key), std::string(value), removed});
+#if defined(CARDENZA_NATIVE_UI)
+  // A later edit of the same key must survive an older snapshot's completion,
+  // including a remove/set round trip that happens to return to the same value.
+  const auto changed = std::find_if(edits_.begin(), edits_.end(), [&](const Edit& item) { return item.key == key; });
+  changed->serial = ++nativeEditSerial_;
+#endif
   dirty_ = true;
 }
 
@@ -297,6 +323,9 @@ bool Settings::Remove(std::string_view key)
 
 bool Settings::Flush()
 {
+#if defined(CARDENZA_NATIVE_UI)
+  DrainSettingsWriteBehind();
+#endif
   if (!dirty_) return true;
   std::vector<SettingsEntry> merged;
   if (!ReadCardSettings(path_, merged))
@@ -329,6 +358,174 @@ Registry& Stores()
 
 }  // namespace
 
+#if defined(CARDENZA_NATIVE_UI)
+// All live Settings objects and the registry remain owned by the system task.
+// Only this detached value batch is shared with the storage worker.
+struct SettingsWriteBatch {
+  struct Store {
+    std::uint64_t identity = 0;
+    std::uint64_t loadEpoch = 0;
+    std::string path;
+    std::string header;
+    std::vector<Settings::Edit> edits;
+    std::vector<SettingsEntry> merged;
+    bool saved = false;
+  };
+
+  std::vector<Store> stores;
+  std::atomic<bool> started{false};
+  std::atomic<bool> done{false};
+  bool saved = false;
+  std::uint64_t ioMicros = 0;
+
+  void Capture(const Settings& settings)
+  {
+    if (!settings.dirty_) return;
+    Store store;
+    store.identity = settings.nativeIdentity_;
+    store.loadEpoch = settings.nativeLoadEpoch_;
+    store.path = settings.path_;
+    store.header = settings.FileHeader();
+    store.edits = settings.edits_;
+    stores.push_back(std::move(store));
+  }
+
+  static void Apply(const std::vector<Settings::Edit>& edits, std::vector<SettingsEntry>& entries)
+  {
+    for (const auto& edit : edits)
+    {
+      const auto entry = std::find_if(entries.begin(), entries.end(), [&](const SettingsEntry& item) { return item.first == edit.key; });
+      if (edit.removed)
+      {
+        if (entry != entries.end()) entries.erase(entry);
+      }
+      else if (entry != entries.end()) entry->second = edit.value;
+      else entries.emplace_back(edit.key, edit.value);
+    }
+  }
+
+  void Write()
+  {
+    const auto begin = std::chrono::steady_clock::now();
+    saved = true;
+    for (auto& store : stores)
+    {
+      // Rebase only these explicit edits onto the file that exists when this
+      // worker actually runs, including keys changed by another client.
+      if (!ReadCardSettings(store.path, store.merged))
+      {
+        ReportCardIoError();
+        saved = false;
+        continue;
+      }
+      Apply(store.edits, store.merged);
+      const auto text = FormatSettings(store.merged, store.header);
+      store.saved = text.size() <= kMaxSettingsFileBytes && CreateDirectories(ParentPath(store.path)) &&
+          WriteFileAtomic(store.path, text);
+      saved = store.saved && saved;
+    }
+    ioMicros = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - begin).count());
+    done.store(true, std::memory_order_release);
+  }
+
+  void Acknowledge(Settings& settings)
+  {
+    for (auto& store : stores)
+    {
+      if (!store.saved || store.identity != settings.nativeIdentity_ || store.loadEpoch != settings.nativeLoadEpoch_) continue;
+      auto& edits = settings.edits_;
+      edits.erase(std::remove_if(edits.begin(), edits.end(), [&](const Settings::Edit& edit) {
+        return std::any_of(store.edits.begin(), store.edits.end(), [&](const Settings::Edit& written) {
+          return written.key == edit.key && written.serial == edit.serial;
+        });
+      }), edits.end());
+      // Keep UI edits made while I/O was running on top of the newly saved
+      // file, while refreshing untouched/unknown keys from its rebase.
+      settings.ApplyEdits(store.merged);
+      if (settings.entries_ != store.merged) ++settings.revision_;
+      settings.entries_ = std::move(store.merged);
+      settings.dirty_ = !edits.empty();
+      return;
+    }
+  }
+};
+
+namespace {
+std::mutex nativeSettingsWriteMutex;
+std::shared_ptr<SettingsWriteBatch> nativeSettingsWrite;
+
+void WriteSettingsInBackground()
+{
+  std::shared_ptr<SettingsWriteBatch> batch;
+  {
+    std::lock_guard<std::mutex> lock(nativeSettingsWriteMutex);
+    batch = nativeSettingsWrite;
+  }
+  // Device::Background invokes every registered job on each notification.
+  if (!batch || batch->started.exchange(true, std::memory_order_acq_rel)) return;
+  batch->Write();
+}
+}  // namespace
+
+bool BeginSettingsWriteBehind()
+{
+  if (SettingsWriteInFlight() || CardMissingThisRun() || !CardMounted()) return false;
+  auto batch = std::make_shared<SettingsWriteBatch>();
+  auto& stores = Stores();
+  if (stores.system) batch->Capture(*stores.system);
+  for (const auto& entry : stores.apps) batch->Capture(*entry.second);
+  if (batch->stores.empty()) return false;
+  {
+    std::lock_guard<std::mutex> lock(nativeSettingsWriteMutex);
+    nativeSettingsWrite = batch;
+  }
+  if (Device::Background::Run(&WriteSettingsInBackground)) return true;
+#if !defined(ESP_PLATFORM)
+  // The simulator has no persistent device worker. Keep the same asynchronous
+  // ownership contract for its native UI and regression harnesses.
+  std::thread(&WriteSettingsInBackground).detach();
+  return true;
+#else
+  std::lock_guard<std::mutex> lock(nativeSettingsWriteMutex);
+  if (nativeSettingsWrite == batch) nativeSettingsWrite.reset();
+  return false;
+#endif
+}
+
+SettingsWriteResult PollSettingsWriteBehind()
+{
+  std::shared_ptr<SettingsWriteBatch> batch;
+  {
+    std::lock_guard<std::mutex> lock(nativeSettingsWriteMutex);
+    if (!nativeSettingsWrite || !nativeSettingsWrite->done.load(std::memory_order_acquire)) return {};
+    batch = std::move(nativeSettingsWrite);
+  }
+  auto& stores = Stores();
+  if (stores.system) batch->Acknowledge(*stores.system);
+  for (auto& entry : stores.apps) batch->Acknowledge(*entry.second);
+  return {true, batch->saved, batch->ioMicros};
+}
+
+bool SettingsWriteInFlight()
+{
+  std::lock_guard<std::mutex> lock(nativeSettingsWriteMutex);
+  return nativeSettingsWrite != nullptr;
+}
+
+void DrainSettingsWriteBehind()
+{
+  std::shared_ptr<SettingsWriteBatch> batch;
+  {
+    std::lock_guard<std::mutex> lock(nativeSettingsWriteMutex);
+    batch = nativeSettingsWrite;
+  }
+  if (!batch) return;
+  while (!batch->done.load(std::memory_order_acquire)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  (void)PollSettingsWriteBehind();
+}
+#endif
+
 Settings& SystemSettings()
 {
   auto& stores = Stores();
@@ -359,6 +556,9 @@ void ReleaseAppSettings(std::string_view appId)
 
 bool FlushAllSettings()
 {
+#if defined(CARDENZA_NATIVE_UI)
+  DrainSettingsWriteBehind();
+#endif
   auto& stores = Stores();
   bool saved = true;
   if (stores.system) saved = stores.system->Flush() && saved;
@@ -383,6 +583,9 @@ bool AnySettingsDirty()
 
 bool RefreshAllSettingsFromCard()
 {
+#if defined(CARDENZA_NATIVE_UI)
+  DrainSettingsWriteBehind();
+#endif
   auto& stores = Stores();
   bool refreshed = true;
   if (stores.system) refreshed = stores.system->RefreshFromCard() && refreshed;
@@ -392,6 +595,9 @@ bool RefreshAllSettingsFromCard()
 
 void ReloadAllSettings()
 {
+#if defined(CARDENZA_NATIVE_UI)
+  DrainSettingsWriteBehind();
+#endif
   auto& stores = Stores();
   if (stores.system) stores.system->Load();
   for (auto& entry : stores.apps) entry.second->Load();

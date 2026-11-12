@@ -2,12 +2,14 @@
 """Build an offline Vibe Mode application bundle without connecting a device."""
 from pathlib import Path
 import argparse
+import json
 import sys
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--idf-path", type=Path, required=True)
+    parser.add_argument("--project", type=Path, default=Path("Devices/Mosaico"))
     arguments = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     tool_root = root / "tools/mosaico-vibe/submodule/esp-mosaico-utils/mosaico-tools"
@@ -20,7 +22,7 @@ def main() -> int:
     context = RunContext(load_workspace(tool_root, start=root), "offline-bundle")
     try:
         iris_python, _ = ensure_iris_tools(context)
-        project = root / "Devices/Mosaico"
+        project = (root / arguments.project).resolve()
         run_idf_target(
             context,
             idf_path=arguments.idf_path.resolve(),
@@ -30,7 +32,8 @@ def main() -> int:
             definitions={"ESP_IRIS_PYTHON": str(iris_python)},
             timeout=1800,
         )
-        bundle = project / "build/CardenzaSynthMosaico-system-update.irisfw"
+        description = json.loads((project / "build/project_description.json").read_text(encoding="utf-8"))
+        bundle = project / "build" / f"{description['project_name']}-system-update.irisfw"
         if not bundle.is_file() or bundle.stat().st_size == 0:
             raise RuntimeError("The build returned without a complete application bundle")
         print(f"Bundle: {bundle}")

@@ -52,6 +52,27 @@ float Decay(std::uint32_t now, std::uint32_t start, std::uint32_t duration)
   return 1.0f - static_cast<float>(now - start) / static_cast<float>(duration);
 }
 
+float OscillatorPhase(std::uint32_t now, float activity)
+{
+  const float speed = activity > 0.02f ? 1.0f / 380.0f : 1.0f / 2400.0f;
+  return std::fmod(static_cast<float>(now) * speed, 1.0f);
+}
+
+float LfoPhase(std::uint32_t now, float rate)
+{
+  return std::fmod(static_cast<float>(now) * (0.0002f + rate * 0.0012f), 1.0f);
+}
+
+float FilterShimmer(std::uint32_t now, float activity)
+{
+  return activity > 0.02f ? 0.04f * std::sin(static_cast<float>(now) / 45.0f) * activity : 0.0f;
+}
+
+float OperatorLevelFlicker(std::uint32_t now, float activity, int op)
+{
+  return activity > 0.02f ? activity * (0.5f + 0.5f * std::sin(static_cast<float>(now) / 40.0f + static_cast<float>(op))) : 0.0f;
+}
+
 std::uint32_t Hash(std::uint32_t value)
 {
   value ^= value >> 16;

@@ -27,6 +27,10 @@ std::vector<SettingsEntry> ParseSettings(std::string_view text, std::size_t* rej
 // `header` is written as comment lines before the entries.
 std::string FormatSettings(const std::vector<SettingsEntry>& entries, std::string_view header);
 
+#if defined(CARDENZA_NATIVE_UI)
+struct SettingsWriteBatch;
+#endif
+
 // One settings store: a RAM cache plus explicit edits to a file on the SD card. Flush rebases the
 // edits onto the current card file, preserving untouched keys after the card was out or swapped.
 // Without a writable card, edits stay dirty in RAM and are lost when the device powers off.
@@ -78,6 +82,9 @@ private:
     std::string key;
     std::string value;
     bool removed = false;
+#if defined(CARDENZA_NATIVE_UI)
+    std::uint64_t serial = 0;
+#endif
   };
 
   std::string FileHeader() const;
@@ -92,7 +99,32 @@ private:
   bool loaded_ = false;
   bool dirty_ = false;
   std::uint32_t revision_ = 0;
+#if defined(CARDENZA_NATIVE_UI)
+  friend struct SettingsWriteBatch;
+  std::uint64_t nativeIdentity_ = 0;
+  std::uint64_t nativeLoadEpoch_ = 0;
+  std::uint64_t nativeEditSerial_ = 0;
+#endif
 };
+
+#if defined(CARDENZA_NATIVE_UI)
+struct SettingsWriteResult {
+  bool completed = false;
+  // Every captured store was saved. Newer edits may still be dirty in RAM.
+  bool saved = false;
+  std::uint64_t ioMicros = 0;
+};
+// The owning/UI task captures pending edits and polls their completion. The
+// worker only accesses independent values, never a Settings object or registry.
+// False means busy, no edits, no mounted storage, or no available worker; it
+// never falls back to synchronous I/O on the caller.
+bool BeginSettingsWriteBehind();
+SettingsWriteResult PollSettingsWriteBehind();
+// Includes a completed batch that the UI has not acknowledged yet.
+bool SettingsWriteInFlight();
+// Explicit flush, refresh, reload, app handoff and shutdown may wait for I/O.
+void DrainSettingsWriteBehind();
+#endif
 
 // The device settings, at SystemSettingsPath(). Loaded on first use.
 Settings& SystemSettings();

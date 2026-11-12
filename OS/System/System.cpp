@@ -174,10 +174,25 @@ bool PrepareCard(bool force = false) {
 bool FlushSettings(bool force = false) {
   auto& state = State();
   if (os::storage::CardMissingThisRun()) return false;
+#if defined(CARDENZA_NATIVE_UI)
+  const auto began = std::chrono::steady_clock::now();
+#endif
   const bool prepared = PrepareCard(force);
+#if defined(CARDENZA_NATIVE_UI)
+  const auto preparedAt = std::chrono::steady_clock::now();
+#endif
   state.settingsTriedAt = Now();
   state.settingsWriteFailed = !prepared || !os::storage::FlushAllSettings();
   if (state.settingsWriteFailed) state.cardReady = false;
+#if defined(CARDENZA_NATIVE_UI)
+  const auto finished = std::chrono::steady_clock::now();
+  const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(finished - began).count();
+  if (duration >= 20000)
+    std::printf("system: slow settings flush at=%u prepare=%lldus write=%lldus ok=%u\n", static_cast<unsigned>(state.settingsTriedAt),
+        static_cast<long long>(std::chrono::duration_cast<std::chrono::microseconds>(preparedAt - began).count()),
+        static_cast<long long>(std::chrono::duration_cast<std::chrono::microseconds>(finished - preparedAt).count()),
+        state.settingsWriteFailed ? 0u : 1u);
+#endif
   return !state.settingsWriteFailed;
 }
 
@@ -216,23 +231,55 @@ void PerformSwitch(const std::string& id) {
 
 void WriteBehindSettings() {
   auto& state = State();
+#if defined(CARDENZA_NATIVE_UI)
+  // The system task owns settings caches. File I/O uses a value snapshot on
+  // the background worker; completion only acknowledges unchanged edits here.
+  const auto completed = os::storage::PollSettingsWriteBehind();
+  if (completed.completed)
+  {
+    state.settingsTriedAt = Now();
+    state.settingsWriteFailed = !completed.saved;
+    if (!completed.saved) state.cardReady = false;
+    if (!completed.saved || completed.ioMicros >= 20000)
+      std::printf("system: background settings flush io=%lluus ok=%u\n",
+          static_cast<unsigned long long>(completed.ioMicros), completed.saved ? 1u : 0u);
+  }
+#endif
   // A run that started without a card keeps its settings in RAM: nothing to do.
   if (os::storage::CardMissingThisRun()) return;
   const std::uint32_t now = Now();
-  // A card mounted again (by anyone who looked for it) brings its settings back. Nobody probes for a
-  // missing card here unless a setting waits to be written.
-  if (!os::storage::CardMounted()) state.cardReady = false;
-  else if (!state.cardReady) (void)PrepareCard();
+#if defined(CARDENZA_NATIVE_UI)
   const std::uint32_t revision = os::storage::SettingsRevision();
   if (revision != state.settingsRevision)
   {
     state.settingsRevision = revision;
     state.settingsChangedAt = now;
   }
+  // A storage refresh would wait for the in-flight write. Ordinary UI ticks
+  // simply defer it; forced application handoff/flush still drains explicitly.
+  if (os::storage::SettingsWriteInFlight()) return;
+#endif
+  // A card mounted again (by anyone who looked for it) brings its settings back. Nobody probes for a
+  // missing card here unless a setting waits to be written.
+  if (!os::storage::CardMounted()) state.cardReady = false;
+  else if (!state.cardReady) (void)PrepareCard();
+#if !defined(CARDENZA_NATIVE_UI)
+  const std::uint32_t revision = os::storage::SettingsRevision();
+  if (revision != state.settingsRevision)
+  {
+    state.settingsRevision = revision;
+    state.settingsChangedAt = now;
+  }
+#endif
   if (!os::storage::AnySettingsDirty() || now - state.settingsChangedAt < kSettingsWriteDelayMs) return;
   // On failure try again after a while instead of every frame.
   if (state.settingsWriteFailed && now - state.settingsTriedAt < kCardRetryMs) return;
+#if defined(CARDENZA_NATIVE_UI)
+  state.settingsTriedAt = now;
+  if (!os::storage::BeginSettingsWriteBehind()) state.settingsWriteFailed = true;
+#else
   (void)FlushSettings();
+#endif
 }
 
 }  // namespace
@@ -303,6 +350,11 @@ void RunFrame(bool draw) {
 
   DispatchMatrixKeyEvents(*application);
   DispatchHomeButtonEvents(*application);
+#if defined(CARDENZA_NATIVE_UI)
+  Device::Touch::Event touch;
+  for (unsigned count = 0; count < 32 && Device::Touch::Poll(touch); ++count)
+    application->HandleTouchEvent(touch);
+#endif
   application->Tick();
   UpdateApplicationLeds(*application);
   if (draw)

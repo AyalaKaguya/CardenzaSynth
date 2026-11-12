@@ -54,6 +54,11 @@ constexpr std::uint32_t kCardCheckMs = 2000;
 constexpr std::uint32_t kCardProbeMs = 10000;
 constexpr std::uint32_t kOrphanCheckMs = 200;
 constexpr std::uint32_t kOrphanConfirmMs = 50;
+#if defined(CARDENZA_NATIVE_UI)
+// Live keys and the independent sequencer must order their ownership checks
+// with the runtime events, rather than race a queued UI note against the clock.
+std::mutex nativeNoteRoutingMutex;
+#endif
 #if defined(ESP_PLATFORM)
 // What the autosave's snapshot and its file need at the same time (many small plain allocations, and
 // the file's buffers, which the card's DMA needs in internal RAM).
@@ -185,6 +190,13 @@ void GrooveApp::Setup(const std::vector<std::string>& args)
   RestorePlaySettings();
   // The autosave is on the card: the working state comes back with it.
   (void)RestoreSessionState();
+#if defined(CARDENZA_NATIVE_UI)
+  // Reopen the native screen, but never resume sound merely because power returned.
+  sequencer_.Stop();
+  sequencer_.SetRecordArmed(false);
+  sequencer_.ArpReleaseAll();
+  RestoreNativeUi();
+#endif
   cardWasMounted_ = os::storage::CardMounted();
   if (cardWasMounted_)
   {
@@ -199,6 +211,11 @@ void GrooveApp::Setup(const std::vector<std::string>& args)
 
 void GrooveApp::Suspend()
 {
+#if defined(CARDENZA_NATIVE_UI)
+  nativeView_.Cancel(controller_, NowMs());
+  nativeTouchIds_.reset();
+  StoreNativeUi();
+#endif
   // A lesson's practice project is never kept: the user's working state comes back first.
   ExitGuide();
   StorePlaySettings();
@@ -300,7 +317,7 @@ bool GrooveApp::RestoreSessionState()
 // Nothing that could be heard, and no finger on a key.
 bool GrooveApp::Quiet(std::uint32_t now) const
 {
-  return now - lastKeyAt_ >= kSessionQuietMs && keysHeld_ == 0 && !sequencer_.Playing() && sampler_.RecordingTrack() < 0;
+  return now - lastKeyAt_ >= kSessionQuietMs && !InputHeld() && !sequencer_.Playing() && sampler_.RecordingTrack() < 0;
 }
 
 // The card comes and goes on its own: what waits for it gets it. A run that started without one has
@@ -529,6 +546,9 @@ void GrooveApp::FlushSession()
 
 void GrooveApp::KeepSessionCurrent(std::uint32_t now)
 {
+#if defined(CARDENZA_NATIVE_UI)
+  if (sampler_.SavingTrack() >= 0) return;
+#endif
   CheckCardSession(now);
   // The guide's practice project is not the working state, and a recording keeps its own file. A run
   // without a card keeps nothing.
@@ -537,7 +557,7 @@ void GrooveApp::KeepSessionCurrent(std::uint32_t now)
   // background task). Keys that keep coming, or a sample played from the card (writing slows its
   // reading), put it off only so long.
   const bool overdue = now - sessionChangedAt_ >= kSessionLongestWaitMs;
-  const bool settled = now - lastKeyAt_ >= kSessionQuietMs && keysHeld_ == 0 && !os::storage::CardStreaming();
+  const bool settled = now - lastKeyAt_ >= kSessionQuietMs && !InputHeld() && !os::storage::CardStreaming();
   if (!settled && !overdue) return;
   if (sessionFailures_ != 0 &&
       now - lastSessionTryAt_ < (sessionFailures_ < kSessionFailuresBeforeSlow ? kSessionRetryMs : kSessionFailedRetryMs))
@@ -584,9 +604,15 @@ void GrooveApp::Tick()
   }
   const std::uint32_t now = NowMs();
   ServiceGuide(now);
+#if defined(CARDENZA_NATIVE_UI)
+  nativeView_.Tick(controller_, now);
+#endif
   controller_.Tick(now);
   animator_.Update(controller_, now);
   StorePlaySettings();
+#if defined(CARDENZA_NATIVE_UI)
+  StoreNativeUi();
+#endif
   CheckCard(now);
   KeepSessionCurrent(now);
   EndOrphanNotes(now);
@@ -678,7 +704,11 @@ void GrooveApp::RenderFrame()
 {
   const auto start = std::chrono::steady_clock::now();
   groove::Gfx gfx(Device::Display::MutableFrameBuffer());
+#if defined(CARDENZA_NATIVE_UI)
+  nativeView_.Render(gfx, controller_, animator_);
+#else
   groove::RenderFrame(gfx, controller_, animator_);
+#endif
 #if defined(ESP_PLATFORM)
   // Frame budget report, looked at every ~12 s (600 frames at 50 fps): printed when notes were lost, a
   // frame took more than a frame's time or the internal RAM's low mark fell by 4 KB, otherwise every
@@ -738,9 +768,7 @@ void GrooveApp::HandleMatrixKeyEvent(std::size_t row, std::size_t column, bool p
 {
   const std::uint32_t now = NowMs();
   controller_.KeyEvent(row, column, pressed, now);
-  if (!sessionChanged_) sessionChangedAt_ = now;
-  sessionChanged_ = true;
-  lastKeyAt_ = now;
+  RegisterInputActivity(now);
   keysHeld_ = pressed ? keysHeld_ + 1 : std::max(0, keysHeld_ - 1);
   // The lesson page follows every key, but not the ones it pressed itself.
   if (guide_ && !guideInjecting_)
@@ -750,6 +778,74 @@ void GrooveApp::HandleMatrixKeyEvent(std::size_t row, std::size_t column, bool p
     SendGuide(text);
   }
 }
+
+void GrooveApp::RegisterInputActivity(std::uint32_t now)
+{
+  if (!sessionChanged_) sessionChangedAt_ = now;
+  sessionChanged_ = true;
+  lastKeyAt_ = now;
+}
+
+bool GrooveApp::InputHeld() const
+{
+#if defined(CARDENZA_NATIVE_UI)
+  return keysHeld_ != 0 || nativeTouchIds_.any();
+#else
+  return keysHeld_ != 0;
+#endif
+}
+
+#if defined(CARDENZA_NATIVE_UI)
+void GrooveApp::HandleTouchEvent(const Device::Touch::Event& event)
+{
+  const auto now = NowMs();
+  const bool heldBefore = nativeTouchIds_.any();
+  const bool handled = nativeView_.Pointer(controller_, event, now);
+  if (event.kind == Device::Touch::Kind::Down && handled) nativeTouchIds_.set(event.id);
+  else if (event.kind == Device::Touch::Kind::Up) nativeTouchIds_.reset(event.id);
+  else if (event.kind == Device::Touch::Kind::Cancel) nativeTouchIds_.reset();
+  if (handled || (heldBefore && !nativeTouchIds_.any())) RegisterInputActivity(now);
+}
+
+void GrooveApp::RestoreNativeUi()
+{
+  const auto& settings = AppSettings();
+  const int track = settings.GetInt("native.track", static_cast<int>(synth::kDefaultActiveTrack), 0, static_cast<int>(groove::kTrackCount) - 1);
+  const int scene = settings.GetInt("native.scene", static_cast<int>(groove::Scene::Instrument), 0, static_cast<int>(groove::kSceneCount) - 1);
+  const int previousScene = settings.GetInt("native.previous_scene", static_cast<int>(groove::Scene::Instrument), 0, static_cast<int>(groove::kSceneCount) - 1);
+  const auto now = NowMs();
+  controller_.Dispatch({groove::native::Kind::SelectTrack, track}, now);
+  for (std::size_t index = 0; index < groove::kSceneCount; ++index)
+  {
+    controller_.Dispatch({groove::native::Kind::SelectScene, static_cast<int>(index)}, now);
+    const std::string key = "native.page." + std::to_string(index);
+    const int page = settings.GetInt(key, 0, 0, static_cast<int>(controller_.PageCount(static_cast<groove::Scene>(index))) - 1);
+    controller_.Dispatch({groove::native::Kind::SelectPage, page}, now);
+  }
+  if (previousScene != scene) controller_.Dispatch({groove::native::Kind::SelectScene, previousScene}, now);
+  controller_.Dispatch({groove::native::Kind::SelectScene, scene}, now);
+  nativeUiStored_ = false;
+  StoreNativeUi();
+}
+
+void GrooveApp::StoreNativeUi()
+{
+  const auto& state = controller_.State();
+  if (nativeUiStored_ && state.scene == nativeStoredScene_ && state.previousScene == nativeStoredPreviousScene_ &&
+      state.track == nativeStoredTrack_ && state.page == nativeStoredPages_) return;
+  auto& settings = AppSettings();
+  settings.SetInt("native.scene", static_cast<int>(state.scene));
+  settings.SetInt("native.previous_scene", static_cast<int>(state.previousScene));
+  settings.SetInt("native.track", static_cast<int>(state.track));
+  for (std::size_t index = 0; index < groove::kSceneCount; ++index)
+    settings.SetInt("native.page." + std::to_string(index), state.page[index]);
+  nativeStoredScene_ = state.scene;
+  nativeStoredPreviousScene_ = state.previousScene;
+  nativeStoredTrack_ = state.track;
+  nativeStoredPages_ = state.page;
+  nativeUiStored_ = true;
+}
+#endif
 
 // ---------------------------------------------------------------------------------------------
 // Engines and notes
@@ -805,14 +901,29 @@ bool GrooveApp::SwitchEngine(std::size_t track, synth::SynthEngineKind kind, std
 void GrooveApp::NoteOn(std::size_t track, std::uint8_t note, std::uint8_t velocity)
 {
   if (track >= synth::kSynthTrackCount) return;
+#if defined(CARDENZA_NATIVE_UI)
+  if (note > 127) return;
+  std::lock_guard<std::mutex> lock(nativeNoteRoutingMutex);
+  if (auto* engine = Engine(track)) engine->ProcessMidi(midi::MidiPacket::NoteOn(0, note, velocity));
+#else
   os::midi::Send(midi::MidiPacket::NoteOn(0, note, velocity), rack_.PortForTrack(track));
+#endif
   SendComputerMidi(0x90, track, note, velocity);
 }
 
 void GrooveApp::NoteOff(std::size_t track, std::uint8_t note)
 {
   if (track >= synth::kSynthTrackCount) return;
+#if defined(CARDENZA_NATIVE_UI)
+  if (note > 127) return;
+  std::lock_guard<std::mutex> lock(nativeNoteRoutingMutex);
+  std::array<std::uint32_t, 4> sequenced{};
+  sequencer_.AddSoundingNotes(track, sequenced);
+  if ((sequenced[note / 32] & (1u << (note % 32))) != 0) return;
+  if (auto* engine = Engine(track)) engine->ProcessMidi(midi::MidiPacket::NoteOff(0, note, 0));
+#else
   os::midi::Send(midi::MidiPacket::NoteOff(0, note, 0), rack_.PortForTrack(track));
+#endif
   SendComputerMidi(0x80, track, note, 0);
 }
 
@@ -884,6 +995,10 @@ void GrooveApp::SendSequencerMidi(void* context, std::size_t trackIndex, const m
 {
   (void)context;
   if (trackIndex >= synth::kSynthTrackCount) return;
+#if defined(CARDENZA_NATIVE_UI)
+  std::lock_guard<std::mutex> lock(nativeNoteRoutingMutex);
+  const auto* application = static_cast<const GrooveApp*>(context);
+#endif
   // Bypass the UI queue: the audio runtime synchronizes stable track indices.
   if (packet.status == midi::MidiStatus::NoteOn && packet.data[2] != 0)
   {
@@ -892,11 +1007,24 @@ void GrooveApp::SendSequencerMidi(void* context, std::size_t trackIndex, const m
   }
   else if (packet.status == midi::MidiStatus::NoteOff || packet.status == midi::MidiStatus::NoteOn)
   {
+#if defined(CARDENZA_NATIVE_UI)
+    // The clock owns sequenced notes independently of held touch/physical keys.
+    // Its note-off must not end a live key still held on the same track/pitch.
+    if (application != nullptr && application->controller_.NativePerformanceHeld(trackIndex, packet.data[1])) return;
+#endif
     synth::audio::NoteOff(trackIndex, packet.data[1]);
     SendComputerMidi(0x80, trackIndex, packet.data[1], 0);
   }
   else if (packet.status == midi::MidiStatus::ControlChange && (packet.data[1] == 120 || packet.data[1] == 123))
+  {
+#if defined(CARDENZA_NATIVE_UI)
+    // Stop already emits each sequenced note-off. Preserve a still-held live
+    // key when its final safety CC follows, including a song ending itself.
+    for (std::uint8_t note = 0; application != nullptr && note < 128; ++note)
+      if (application->controller_.NativePerformanceHeld(trackIndex, note)) return;
+#endif
     synth::audio::AllNotesOff(trackIndex);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
