@@ -67,6 +67,8 @@ esp_err_t StatusRpc(const esp_iris_rpc_request_t* request, std::uint8_t* respons
       ",\"audio_blocks\":%" PRIu32 ",\"written\":%" PRIu32 ",\"nonzero\":%" PRIu32 ",\"peak\":%" PRIu32
       ",\"queue_frames\":%" PRIu32 ",\"render_us\":%" PRIu32 ",\"render_max_us\":%" PRIu32
       ",\"overruns\":%" PRIu32 ",\"estimated_underruns\":%" PRIu32 ",\"write_failures\":%" PRIu32
+      ",\"startup_muted\":%s,\"recording_muted\":%s,\"output_gain_q15\":%" PRIu32
+      ",\"output_nonzero\":%" PRIu32 ",\"output_peak\":%" PRIu32
       ",\"audio_test\":\"%s\",\"tests_completed\":%" PRIu32 "}",
       static_cast<std::uint64_t>(esp_timer_get_time() / 1000), g_elapsedMs.load(std::memory_order_relaxed),
       g_frameCount.load(std::memory_order_relaxed), g_lateFrames.load(std::memory_order_relaxed),
@@ -78,6 +80,8 @@ esp_err_t StatusRpc(const esp_iris_rpc_request_t* request, std::uint8_t* respons
       static_cast<unsigned>(memory::SlowMinimum()), timing.blocks, audio.writtenBlocks,
       audio.nonSilentBlocks, audio.peak, audio.queueFrames, timing.renderMicros,
       timing.longestRenderMicros, timing.overruns, timing.underruns, audio.writeFailures,
+      audio.startupMuted ? "true" : "false", audio.recordingMuted ? "true" : "false",
+      audio.outputGainQ15, audio.outputNonSilentBlocks, audio.outputPeak,
       TestStateName(g_testState.load(std::memory_order_acquire)), g_testCount.load(std::memory_order_relaxed));
   if (written < 0 || static_cast<std::size_t>(written) >= capacity) return ESP_ERR_INVALID_SIZE;
   *responseSize = static_cast<std::size_t>(written);

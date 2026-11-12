@@ -43,7 +43,7 @@ std::atomic<device::SynthAudioRenderCallback> g_renderCallback{nullptr};
 std::atomic<std::uint8_t> g_outputVolume{Device::Audio::kDefaultOutputVolume};
 static_assert(Device::Audio::kDefaultOutputVolume == 100, "Initial output gain must match the device volume");
 std::atomic<std::int32_t> g_outputGain{kUnityGain};
-std::atomic<bool> g_muted{false};
+std::atomic<bool> g_startupMuted{false};
 std::atomic<bool> g_outputReady{false};
 std::mutex g_startMutex;
 TaskHandle_t g_task = nullptr;  // protected by g_startMutex; never deleted while the app runs
@@ -58,6 +58,15 @@ std::atomic<std::uint32_t> g_nonSilentBlocks{0};
 std::atomic<std::uint32_t> g_writeFailures{0};
 std::atomic<std::uint32_t> g_peak{0};
 std::atomic<std::uint32_t> g_queueFrames{0};
+std::atomic<std::uint32_t> g_outputGainApplied{0};
+std::atomic<std::uint32_t> g_outputNonSilentBlocks{0};
+std::atomic<std::uint32_t> g_outputPeak{0};
+
+constexpr std::uint32_t Magnitude(std::int16_t sample)
+{
+  const std::int32_t value = sample;
+  return static_cast<std::uint32_t>(value < 0 ? -value : value);
+}
 
 // Called once, by the output task. The BSP has no public teardown for a failed
 // partial I2S allocation, so do not repeatedly initialize it after such a failure.
@@ -126,23 +135,21 @@ void RenderBlock()
 
   std::uint32_t peak = 0;
   for (const auto sample : g_mono)
-  {
-    const std::int32_t value = sample;
-    peak = (std::max)(peak, static_cast<std::uint32_t>(value < 0 ? -value : value));
-  }
+    peak = (std::max)(peak, Magnitude(sample));
   if (peak != 0) g_nonSilentBlocks.fetch_add(1, std::memory_order_relaxed);
   if (peak > g_peak.load(std::memory_order_relaxed)) g_peak.store(peak, std::memory_order_relaxed);
 }
 
-void PrepareStereo(std::int32_t& previousGain)
+std::uint32_t PrepareStereo(std::int32_t& previousGain)
 {
-  const bool muted = g_muted.load(std::memory_order_relaxed)
+  const bool muted = g_startupMuted.load(std::memory_order_relaxed)
 #if defined(CARDENZA_NATIVE_UI)
       || mosaico::microphone::OutputMuted()
 #endif
       ;
   const std::int32_t target = muted ? 0 :
       g_outputGain.load(std::memory_order_relaxed);
+  std::uint32_t peak = 0;
   for (std::size_t frame = 0; frame < kBlockFrames; ++frame)
   {
     const std::int32_t gain = previousGain + (target - previousGain) * static_cast<std::int32_t>(frame + 1) /
@@ -150,8 +157,10 @@ void PrepareStereo(std::int32_t& previousGain)
     const auto sample = static_cast<std::int16_t>((static_cast<std::int32_t>(g_mono[frame]) * gain) / kUnityGain);
     g_stereo[2 * frame] = sample;
     g_stereo[2 * frame + 1] = sample;
+    peak = (std::max)(peak, Magnitude(sample));
   }
   previousGain = target;
+  return peak;
 }
 
 // When output is unavailable there is no blocking I2S write to pace rendering.
@@ -211,7 +220,7 @@ void AudioTask(void*)
     if (!ready) PaceWithoutOutput(drainStarted, drainFrames);
     else drainStarted = 0;
     RenderBlock();
-    PrepareStereo(previousGain);
+    const auto outputPeak = PrepareStereo(previousGain);
 
     if (ready)
     {
@@ -230,12 +239,17 @@ void AudioTask(void*)
       if (result == ESP_CODEC_DEV_OK)
       {
         g_writtenBlocks.fetch_add(1, std::memory_order_relaxed);
+        if (outputPeak != 0) g_outputNonSilentBlocks.fetch_add(1, std::memory_order_relaxed);
+        g_outputPeak.store(outputPeak, std::memory_order_relaxed);
+        g_outputGainApplied.store(static_cast<std::uint32_t>(previousGain), std::memory_order_relaxed);
         queuedMicros = writeEnd - writeBegin > kWriteWaitedMicros ? queueMicros :
             (std::min)(queueMicros, queuedMicros + kBlockMicros);
         lastWriteEnd = writeEnd;
       }
       else
       {
+        g_outputPeak.store(0, std::memory_order_relaxed);
+        g_outputGainApplied.store(0, std::memory_order_relaxed);
         g_outputReady.store(false, std::memory_order_release);
         const auto failures = g_writeFailures.fetch_add(1, std::memory_order_relaxed) + 1;
         if ((failures % 64) == 1) ESP_LOGE(kLogTag, "ES8311 write failed (%d), failures=%" PRIu32, result, failures);
@@ -246,13 +260,20 @@ void AudioTask(void*)
         queuedMicros = 0;
       }
     }
+    else
+    {
+      g_outputPeak.store(0, std::memory_order_relaxed);
+      g_outputGainApplied.store(0, std::memory_order_relaxed);
+    }
     if (esp_timer_get_time() >= logAt)
     {
       // The BSP hides its I2S handle/callbacks. Queue starvation below is a timing
       // estimate, not a hardware interrupt counter; log that distinction explicitly.
       ESP_LOGI(kLogTag, "audio blocks=%" PRIu32 " written=%" PRIu32 " nonzero=%" PRIu32
+               " output_nonzero=%" PRIu32 " output_peak=%" PRIu32 " gain_q15=%" PRIu32
                " max_render=%" PRIu32 "us overruns=%" PRIu32 " estimated_underruns=%" PRIu32 " failures=%" PRIu32,
-               g_blocks.load(), g_writtenBlocks.load(), g_nonSilentBlocks.load(), g_longestRenderMicros.load(),
+               g_blocks.load(), g_writtenBlocks.load(), g_nonSilentBlocks.load(),
+               g_outputNonSilentBlocks.load(), g_outputPeak.load(), g_outputGainApplied.load(), g_longestRenderMicros.load(),
                g_overruns.load(), g_underruns.load(), g_writeFailures.load());
       logAt = esp_timer_get_time() + kLogIntervalMicros;
     }
@@ -280,11 +301,30 @@ bool Start()
 }
 
 bool Ready() { return g_outputReady.load(std::memory_order_acquire); }
-void SetMuted(bool muted) { g_muted.store(muted, std::memory_order_relaxed); }
+void SetStartupMuted(bool muted)
+{
+  if (g_startupMuted.exchange(muted, std::memory_order_relaxed) != muted)
+    ESP_LOGI(kLogTag, "startup output %s, volume=%u%%", muted ? "held" : "released",
+             static_cast<unsigned>(Device::Audio::OutputVolume()));
+}
 
 Diagnostics GetDiagnostics()
 {
-  return {Ready(), g_writtenBlocks.load(), g_nonSilentBlocks.load(), g_writeFailures.load(), g_peak.load(), g_queueFrames.load()};
+  Diagnostics result;
+  result.ready = Ready();
+  result.writtenBlocks = g_writtenBlocks.load(std::memory_order_relaxed);
+  result.nonSilentBlocks = g_nonSilentBlocks.load(std::memory_order_relaxed);
+  result.writeFailures = g_writeFailures.load(std::memory_order_relaxed);
+  result.peak = g_peak.load(std::memory_order_relaxed);
+  result.queueFrames = g_queueFrames.load(std::memory_order_relaxed);
+  result.startupMuted = g_startupMuted.load(std::memory_order_relaxed);
+#if defined(CARDENZA_NATIVE_UI)
+  result.recordingMuted = mosaico::microphone::OutputMuted();
+#endif
+  result.outputGainQ15 = g_outputGainApplied.load(std::memory_order_relaxed);
+  result.outputNonSilentBlocks = g_outputNonSilentBlocks.load(std::memory_order_relaxed);
+  result.outputPeak = g_outputPeak.load(std::memory_order_relaxed);
+  return result;
 }
 
 }  // namespace mosaico::audio

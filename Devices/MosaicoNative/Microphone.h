@@ -15,7 +15,7 @@ Device::Audio::InputStatus Read(std::int16_t* destination, std::size_t frameCoun
                                 std::size_t& framesRead, std::uint32_t timeoutMs);
 // Call on the BSP output owner once each audio block, outside any render lock.
 void ServiceControl(bool outputReady);
-// A separate recording mute preserves the user's master mute and volume.
+// A separate recording gate leaves the configured output volume unchanged.
 bool OutputMuted();
 
 struct Diagnostics {

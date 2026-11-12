@@ -61,4 +61,10 @@ TIME、ADD / SUB 和菜单翻页复用共享控制器的选择处理规则（单
 `mosaico.py native-files --help` 和 `mosaico.py native-touch --help` 分别说明文件与触控工具。
 离线打包入口为 `tools/mosaico_bundle.py --project Devices/MosaicoNative --idf-path <SDK路径>`。
 
+音频状态 RPC（`0x4343`，方法 `1`）只读，不启动播放。`volume` 是保存的主音量，
+`startup_muted` 和 `recording_muted` 分别说明启动与录音的输出门控；两者不修改主音量。
+`nonzero` / `peak` 统计音量处理前的合成器 PCM；`output_nonzero` 只统计成功写入
+codec 的非零输出块，`output_peak` 是最近成功写入块的音量处理后峰值，
+`output_gain_q15` 是该块末尾的增益（32768 为原幅度）。这些状态不能代替扬声器听音确认。
+
 已有的最小移植实机验证记录不代表此目标已完成触控、录音、存储或性能验收。

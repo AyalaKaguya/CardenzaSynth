@@ -106,7 +106,7 @@ void RuntimeTask(void*)
     vTaskDelete(nullptr);
     return;
   }
-  mosaico::audio::SetMuted(true);
+  mosaico::audio::SetStartupMuted(true);
   if (!mosaico::audio::Start())
   {
     ESP_LOGE(kTag, "audio task could not start; Vibe Mode return remains available");
@@ -123,7 +123,7 @@ void RuntimeTask(void*)
   }
   auto& application = *static_cast<apps::GrooveApp*>(os::system::ActiveApplication());
   application.SetMasterVolume(CONFIG_CARDENZA_MOSAICO_TEST_VOLUME);
-  mosaico::audio::SetMuted(false);
+  mosaico::audio::SetStartupMuted(false);
   LogHeap("after boot");
   ESP_LOGI(kTag, "system ready: original %dx%d UI at 1:1, 10ms ticks/20ms draw target; keyboard/storage not connected",
            Device::Display::kWidth, Device::Display::kHeight);

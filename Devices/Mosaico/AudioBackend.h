@@ -10,9 +10,9 @@ namespace mosaico::audio {
 // readiness is separate because audio initialization happens on that task.
 bool Start();
 bool Ready();
-// This affects only device output, after the synth render. It never stops the clock
-// or prevents pending synth events from being consumed.
-void SetMuted(bool muted);
+// Hold device output while the application restores its settings/session. This
+// startup gate is separate from the user's volume and the recording gate.
+void SetStartupMuted(bool muted);
 
 struct Diagnostics {
   bool ready = false;
@@ -21,10 +21,15 @@ struct Diagnostics {
   std::uint32_t writeFailures = 0;
   std::uint32_t peak = 0;             // largest absolute pre-volume PCM value, 0..32768
   std::uint32_t queueFrames = 0;      // BSP/IDF default DMA capacity
+  bool startupMuted = false;
+  bool recordingMuted = false;
+  std::uint32_t outputGainQ15 = 0;    // gain at the end of the last successful codec write; 32768 = unity
+  std::uint32_t outputNonSilentBlocks = 0;  // successful writes with nonzero post-volume PCM
+  std::uint32_t outputPeak = 0;       // post-volume peak of the last successful write; zero if unavailable
 };
 
-// Together with Device::Audio::Timing(), lets an explicitly enabled note test
-// distinguish real synth output, a running task, and successful codec writes.
+// Distinguishes rendered synth PCM from the PCM actually passed to successful
+// codec writes. These counters do not measure the speaker's acoustic output.
 Diagnostics GetDiagnostics();
 
 }  // namespace mosaico::audio

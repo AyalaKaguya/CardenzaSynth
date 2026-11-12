@@ -49,7 +49,7 @@ void Runtime(void*)
     vTaskDelete(nullptr);
     return;
   }
-  mosaico::audio::SetMuted(true);
+  mosaico::audio::SetStartupMuted(true);
   if (!mosaico::audio::Start() || !os::system::Begin())
   {
     ESP_LOGE(kTag, "application initialization failed; Vibe Mode remains available");
@@ -58,7 +58,7 @@ void Runtime(void*)
   }
   // Settings and working project are restored by the existing system/app.
   // Begin never starts transport, and native has no automatic startup phrase.
-  mosaico::audio::SetMuted(false);
+  mosaico::audio::SetStartupMuted(false);
   (void)mosaico::diagnostics::Init(false, false);
   ESP_ERROR_CHECK_WITHOUT_ABORT(esp_iris_rpc_register(0x4344, 2, FlushSessionRpc, nullptr));
   ESP_LOGI(kTag, "mosaico-native ready: 480x480, 10ms tick, 30fps draw target, storage=%u, heap=%u PSRAM=%u",
