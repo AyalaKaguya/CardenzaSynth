@@ -18,8 +18,6 @@ enum class Kind : std::uint8_t {
   SelectTrack,     // index = track 0..3
   TextKey,        // ASCII or -1 backspace, -2 left, -3 right, -4 clear
   Search,         // open browser search field
-  SelectScenePage, // index = scene, value = page
-  SceneListScroll, // view only: index = scene, value = scroll delta
   SequencePage,   // index = direction; uses the shared page/selection policy
   RollPitch,      // view only: index = pitch window delta
   RollNote,       // index = absolute step, value = MIDI note; toggle one note

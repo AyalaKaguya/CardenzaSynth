@@ -405,15 +405,6 @@ bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
         return true;
       }
       return false;
-    case Kind::SelectScenePage:
-      if (index >= kSceneCount || command.value < 0 ||
-          static_cast<std::size_t>(command.value) >= PageCount(static_cast<Scene>(index)) || TopModal() != nullptr) return false;
-      NativeCancelGesture();
-      GoToScene(static_cast<Scene>(index));
-      SetPage(static_cast<std::uint8_t>(command.value));
-      nativeFocusedCell_ = 0xFF;
-      return true;
-    case Kind::SceneListScroll:
     case Kind::RollPitch: return false; // only display scroll, never an edit
     case Kind::SequencePage:
       if (TopModal() != nullptr || state_.scene != Scene::Sequence || CurrentPage() != 0 || command.index == 0) return false;

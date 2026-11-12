@@ -15,8 +15,6 @@ namespace groove::native {
 namespace {
 using namespace theme;
 constexpr std::array<KeyRole, 4> kRight{{KeyRole::Add, KeyRole::Sub, KeyRole::Enter, KeyRole::Play}};
-constexpr std::array<const char*, 4> kLeftNames{{"ESC", "TAB", "FN", "CTRL"}};
-constexpr std::array<const char*, 4> kRightNames{{"ADD", "SUB", "ENTER", "PLAY"}};
 constexpr std::array<const Color*, 4> kLeftColors{{&kEsc, &kTab, &kFn, &kCtrl}};
 constexpr std::array<Glyph, 4> kLeftGlyphs{{Glyph::Back, Glyph::Tab, Glyph::Menu, Glyph::Pages}};
 
@@ -175,9 +173,6 @@ void View::SetLayer(Controller& controller, Layer layer, std::uint32_t nowMs)
   layer_ = layer;
   if (layer != Layer::None)
   {
-    if (layer == Layer::Scenes)
-      for (std::size_t scene = 0; scene < kSceneCount; ++scene)
-        sceneListScroll_[scene] = controller.State().page[scene] > 2 ? controller.State().page[scene] - 2 : 0;
     closingLayer_ = Layer::None;
     layerOpenedAt_ = nowMs;
     controller.NotifyNativeOverlay(static_cast<std::size_t>(layer) - 1, true, nowMs);
@@ -320,8 +315,6 @@ void View::Sides(Gfx& g, const Controller& controller, Animator& animator)
     KeyCap(g, leftCap, leftColor, selected || leftDown, false, leftDensity);
     if (!selected && !leftDown) g.Fill(Rect{leftCap.x + 1, l.y + 53, 8, 11}, kBlack);
     g.DrawGlyph(leftCap.x + 2, l.y + 55, kLeftGlyphs[row], selected || leftDown ? kBlack : leftColor);
-    g.TextAligned(Rect{20, l.y + 54, 26, 12}, modal && row == 0 ? "BACK" : kLeftNames[row],
-                  usable ? selected ? *kLeftColors[row] : kDim : kShade, Font::Micro, Align::Center);
     if (usable)
     {
       if (modal && row == 0) AddHit(l, {Kind::Back});
@@ -339,8 +332,6 @@ void View::Sides(Gfx& g, const Controller& controller, Animator& animator)
            std::clamp(static_cast<int>(1 + rightLed), 1, 16));
     if (!down) g.Fill(Rect{rightCap.x + 1, r.y + 53, 8, 11}, kBlack);
     g.DrawGlyph(rightCap.x + 2, r.y + 55, rightGlyphs[row], down ? kBlack : rightColor);
-    g.TextAligned(Rect{433, r.y + 54, 30, 12}, row == 3 && playing ? "STOP" : kRightNames[row],
-                  rightUsable ? down ? kInk : rightColor : kShade, Font::Micro, Align::Center);
     if (rightUsable) AddHit(r, {Kind::SideDown, static_cast<int>(kRight[row])}, true);
   }
 }
@@ -381,65 +372,48 @@ void View::Layers(Gfx& g, const Controller& controller, Animator& animator, Laye
   (void)render::GrowOverlay(g, layout::kCenter, layout::kCenter, source, accent, progress);
   if (layer == Layer::Scenes)
   {
-    // A scene column is a navigation list, not an action card. Keep every
-    // title and page on the same baseline, regardless of the page count.
+    // One touch target per scene. Page names describe the scene only; long
+    // lists use compact columns instead of adding page or scroll gestures.
     const Rect overlayClip = g.Clip();
-    constexpr int headingHeight = 76;
-    constexpr int rowHeight = 32;
-    constexpr int padding = 6;
+    constexpr int padding = 8;
+    constexpr int listTop = 42;
+    constexpr int rowHeight = 16;
+    constexpr int columnGap = 6;
     for (std::size_t i = 0; i < kSceneCount; ++i)
     {
-      const Rect rect = layout::Span(0, i, 4, 1);
+      const Rect rect = layout::Span((i / 2) * 2, (i % 2) * 2, 2, 2);
       const auto scene = static_cast<Scene>(i);
       const bool current = controller.State().scene == scene;
       const Color ink = current ? kBlack : kInk;
       const Color secondary = current ? kBlack : kDim;
+      render::DrawMapTile(g, rect, current, true, kEsc, animator.Now(), kInk, true);
       const int left = std::max(rect.x, overlayClip.x);
       const int top = std::max(rect.y, overlayClip.y);
       const int right = std::min(rect.x + rect.width, overlayClip.x + overlayClip.width);
       const int bottom = std::min(rect.y + rect.height, overlayClip.y + overlayClip.height);
       g.SetClip(Rect{left, top, std::max(0, right - left), std::max(0, bottom - top)});
-      g.Fill(rect, current ? kInk : kBlack);
-      g.Stroke(rect, current ? kEsc : kDim);
-      g.Text(rect.x + padding, rect.y + 10, std::to_string(i), current ? kBlack : kEsc, Font::Huge);
-      const Rect title{rect.x + padding, rect.y + 40, rect.width - padding * 2, 22};
-      const Font titleFont = Gfx::Measure(kSceneNames[i], Font::Large) <= title.width ? Font::Large : Font::Small;
-      g.TextAligned(title, kSceneNames[i], ink, titleFont, Align::Left);
-      g.HLine(rect.x + padding, rect.y + headingHeight - 6, rect.width - padding * 2, secondary);
-      AddHit(Rect{rect.x, rect.y, rect.width, headingHeight}, {Kind::SelectScene, static_cast<int>(i)});
+      g.Text(rect.x + padding, rect.y + 8, std::to_string(i) + " " + kSceneNames[i], ink, Font::Large);
+      g.HLine(rect.x + padding, rect.y + 32, rect.width - padding * 2, secondary);
       const auto count = controller.PageCount(scene);
-      const auto capacity = static_cast<std::size_t>((rect.height - headingHeight - padding) / rowHeight);
-      const bool scrolling = count > capacity;
-      const auto visible = scrolling ? capacity - 2 : std::min(count, capacity);
-      auto& first = sceneListScroll_[i];
-      first = scrolling ? std::min(first, count - visible) : 0;
-      if (scrolling)
+      const auto capacity = static_cast<std::size_t>((rect.height - listTop - padding) / rowHeight);
+      const auto columns = std::max<std::size_t>(1, (count + capacity - 1) / capacity);
+      const auto rows = (count + columns - 1) / columns;
+      const int columnWidth = (rect.width - padding * 2 - static_cast<int>(columns - 1) * columnGap) / static_cast<int>(columns);
+      for (std::size_t page = 0; page < count; ++page)
       {
-        const Rect up{rect.x + 3, rect.y + headingHeight, rect.width - 6, rowHeight};
-        const Rect down{up.x, up.y + static_cast<int>(visible + 1) * rowHeight, up.width, rowHeight};
-        g.TextAligned(up, "UP", first > 0 ? ink : secondary, Font::Small, Align::Center);
-        g.TextAligned(down, "DOWN", first + visible < count ? ink : secondary, Font::Small, Align::Center);
-        widgets::DottedFrame(g, up, first > 0 ? secondary : current ? kBlack : kShade);
-        widgets::DottedFrame(g, down, first + visible < count ? secondary : current ? kBlack : kShade);
-        if (first > 0) AddHit(up, {Kind::SceneListScroll, static_cast<int>(i), -1});
-        if (first + visible < count) AddHit(down, {Kind::SceneListScroll, static_cast<int>(i), 1});
-      }
-      for (std::size_t row = 0; row < visible; ++row)
-      {
-        const auto page = first + row;
-        const Rect item{rect.x + 3, rect.y + headingHeight + static_cast<int>(row + (scrolling ? 1 : 0)) * rowHeight,
-                        rect.width - 6, rowHeight};
-        const bool selected = controller.State().page[i] == page;
-        const auto text = controller.PageTab(scene, page);
-        const Font font = Gfx::Measure(text, Font::Small) <= item.width - 6 ? Font::Small : Font::Micro;
-        if (selected) g.Fill(Rect{item.x, item.y + 4, item.width, rowHeight - 8}, current ? kBlack : kDim);
-        const Color textColor = selected ? (current ? kInk : kBlack) : secondary;
-        widgets::DottedFrame(g, Rect{item.x, item.y + 4, item.width, rowHeight - 8},
-                             selected ? textColor : current ? kBlack : kDim);
-        g.TextAligned(Rect{item.x + 3, item.y, item.width - 6, item.height}, text, textColor, font, Align::Left);
-        AddHit(item, {Kind::SelectScenePage, static_cast<int>(i), static_cast<int>(page)});
+        const auto column = page / rows;
+        const auto row = page % rows;
+        const Rect item{rect.x + padding + static_cast<int>(column) * (columnWidth + columnGap),
+                        rect.y + listTop + static_cast<int>(row) * rowHeight, columnWidth, rowHeight - 2};
+        const bool marked = controller.State().page[i] == page;
+        if (marked) g.Fill(item, current ? kBlack : kDim);
+        const Color textColor = marked ? (current ? kInk : kBlack) : secondary;
+        g.TextFit(item.x + 3, item.y + (item.height - Gfx::CapHeight(Font::Small)) / 2,
+                  item.width - 6, controller.PageTab(scene, page), textColor, Font::Small);
       }
       g.SetClip(overlayClip);
+      render::PaintGridRipple(g, animator, i, rect, kEsc);
+      AddHit(rect, {Kind::SelectScene, static_cast<int>(i)});
     }
   }
   else if (layer == Layer::Tracks)
@@ -774,15 +748,9 @@ bool View::Pointer(Controller& controller, const Device::Touch::Event& event, st
       {
         if (hit.command.kind == Kind::RollPitch)
           rollLowNote_ = std::clamp(rollLowNote_ + hit.command.index, 0, 120);
-        else if (hit.command.kind == Kind::SceneListScroll)
-        {
-          const auto scene = static_cast<std::size_t>(hit.command.index);
-          if (scene < sceneListScroll_.size())
-            sceneListScroll_[scene] = static_cast<std::size_t>(std::max(0, static_cast<int>(sceneListScroll_[scene]) + hit.command.value));
-        }
         else (void)controller.Dispatch(hit.command, nowMs);
-        if (hit.command.kind == Kind::TrackMapCell || hit.command.kind == Kind::SceneListScroll ||
-            (layer_ == Layer::Scenes && (hit.command.kind == Kind::SelectScene || hit.command.kind == Kind::SelectScenePage)) ||
+        if (hit.command.kind == Kind::TrackMapCell ||
+            (layer_ == Layer::Scenes && hit.command.kind == Kind::SelectScene) ||
             (layer_ == Layer::Pages && hit.command.kind == Kind::SelectPage))
         {
           // Navigation changes the view generation, but keeps the latched map open.

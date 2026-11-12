@@ -37,9 +37,11 @@ TIME、ADD / SUB 和菜单翻页复用共享控制器的选择处理规则（单
 
 ## 与共享界面的操作对齐
 
+- 两侧快捷键仅显示图标和灯带，不绘制按键名称；触控区域与短按、长按操作保持原样。
 - 左侧 ESC / TAB / FN / CTRL 短按复用共享控制器动作，长按 250 ms 打开并保持
   对应地图，再按同一键关闭。场景、轨道和页面选择后地图保持；菜单动作按其业务打开弹窗或执行。
-- 场景地图按四列显示，列内可直接选页面，长列表通过 UP / DOWN 滚动；
+- ESC 场景地图使用 2×2 卡片，点击整张卡片切换场景；卡片内页面列表仅展示，
+  没有独立触控或滚动操作，长列表在卡片内分列排版。页面切换仍使用 CTRL 或底部分页标签。
   轨道地图保留选轨、MUTE、SOLO、SEQ，地图内 ADD / SUB 可切轨或翻页。
 - 工程和预设 SAVE AS、工程与采样 RENAME 使用共享文字输入流程。
   触屏键盘提供大写字母、数字、空格、连字符、光标移动、退格和清空，确认与取消分别提交或放弃。
@@ -54,6 +56,8 @@ TIME、ADD / SUB 和菜单翻页复用共享控制器的选择处理规则（单
 
 从仓库根目录使用 `mosaico.py`，沿用[最小移植的依赖与 SDK 配置](../Mosaico/README.md)，
 将项目参数设为 `--project Devices/MosaicoNative`。
+每次构建前同步官方 ESP-IDF master 最新提交及其子模块，再记录本次 SHA；
+此前的 SHA 只用于追溯，不约束后续构建。SDK 更新后使用独立构建目录重新编译。
 `mosaico.py native-files --help` 和 `mosaico.py native-touch --help` 分别说明文件与触控工具。
 离线打包入口为 `tools/mosaico_bundle.py --project Devices/MosaicoNative --idf-path <SDK路径>`。
 

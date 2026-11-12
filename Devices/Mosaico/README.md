@@ -13,7 +13,7 @@
 
 默认启动音量为 **20%**，在系统启动后通过现有 Juno 轨播放一段短 C–E–G 音序，再停止并清除测试音符。可在 `Cardenza Mosaico minimal port` 配置中关闭 `CONFIG_CARDENZA_MOSAICO_AUDIO_TEST`，或调整 `CONFIG_CARDENZA_MOSAICO_TEST_VOLUME`。软件诊断可确认非零 PCM 与 codec 写入，不能替代扬声器听音验收。
 
-## 固定版本
+## 依赖版本与构建记录
 
 | 组件 | 本次使用的提交 |
 |---|---|
@@ -25,7 +25,7 @@
 
 Vibe 位于本仓库的 `tools/mosaico-vibe` 子模块。这里采用 Vibe 固定的 BSP，未混入 BSP HEAD 的新 NAND 接口。
 
-本次按用户选择使用官方开发 SDK，覆盖 Vibe 原先指定的 SDK SHA。`C:\esp\master\esp-idf` 当前处于上述 `0e6b480…` 的 detached HEAD；旧版 `383dda6c182e3dabf6355160166fe007df775629` 保留在本地分支 `codex/before-cardenza-mosaico-20261111`。稳定 SDK 和桌面 OP-Ay1 工作区未修改。实施记录须按实际 SHA 区分版本，不能仅凭 `6.2.0` 版本字符串判断相同。
+ESP-IDF 始终使用官方 master 最新代码，覆盖 Vibe 历史 SDK 固定值。每次构建前拉取远端、更新 SDK 及所需子模块，再记录本次 SHA；表内 `0e6b480…` 仅为早期构建记录，不是后续构建约束。不能只凭目录名 `master` 或 `6.2.0` 版本字符串判断 SDK 已是最新。
 
 ## 构建
 
