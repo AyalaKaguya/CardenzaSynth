@@ -57,6 +57,7 @@ private:
   void Graphic(Gfx& g, const Controller& controller, Animator& animator,
                const InstrumentPage& page, const Rect& area);
   void Sequence(Gfx& g, const Controller& controller, Animator& animator, std::uint8_t page);
+  void PianoRoll(Gfx& g, const Controller& controller, Animator& animator);
   void Tape(Gfx& g, const Controller& controller, Animator& animator, std::uint8_t page);
   void Setup(Gfx& g, const Controller& controller, Animator& animator, std::uint8_t page);
   void Cell(Gfx& g, const Rect& rect, std::string_view label, std::string_view value,
@@ -71,11 +72,15 @@ private:
   std::array<PerformanceHit, 64> performanceHits_{};
   std::size_t performanceHitCount_ = 0;
   std::array<PerformancePointer, 2> performancePointers_{};
+  std::size_t rollFirstStep_ = 0;
+  int rollLowNote_ = 48;
   Layer layer_ = Layer::None;
   Hit pressed_{};
   std::uint8_t pointerId_ = 0;
   bool pointerDown_ = false;
   bool pointerCancelled_ = false;
+  std::uint32_t pressedAt_ = 0;
+  bool holdOpened_ = false;
   std::uint32_t pressGeneration_ = 0;
   std::uint32_t renderGeneration_ = 0;
   std::uint32_t layerOpenedAt_ = 0;

@@ -351,22 +351,6 @@ void Controller::NativeEnter()
   Enter();
 }
 
-void Controller::SaveProjectAutomatic()
-{
-  const auto existing = host_.ListProjects();
-  for (unsigned number = 1; number <= 9999; ++number)
-  {
-    char name[24];
-    std::snprintf(name, sizeof(name), "SONG %02u", number);
-    if (std::find(existing.begin(), existing.end(), name) == existing.end())
-    {
-      SaveProjectNamed(name, false);
-      return;
-    }
-  }
-  ShowToast("NO FREE PROJECT NAME", ToastKind::Error);
-}
-
 bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
 {
   using native::Kind;
@@ -446,6 +430,61 @@ bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
       SelectTrack(index);
       nativeFocusedCell_ = 0xFF;
       return true;
+    case Kind::TextKey:
+    {
+      Modal* modal = Top();
+      if (modal == nullptr || modal->kind != ModalKind::TextEntry) return false;
+      auto& text = modal->text;
+      auto& cursor = modal->textCursor;
+      cursor = std::min(cursor, text.size());
+      if (command.index == -1 && cursor > 0) text.erase(--cursor, 1);
+      else if (command.index == -2 && cursor > 0) --cursor;
+      else if (command.index == -3 && cursor < text.size()) ++cursor;
+      else if (command.index == -4) { text.clear(); cursor = 0; }
+      else if (((command.index >= 'A' && command.index <= 'Z') || (command.index >= '0' && command.index <= '9') ||
+                command.index == '-' || (command.index == ' ' && cursor > 0)) && text.size() < modal->maxLength)
+        text.insert(cursor++, 1, static_cast<char>(command.index));
+      return true;
+    }
+    case Kind::Search:
+      if (const Modal* modal = TopModal(); modal != nullptr &&
+          (modal->kind == ModalKind::PresetBrowser || modal->kind == ModalKind::SampleBrowser))
+      {
+        const auto initial = modal->search;
+        OpenTextEntry(TextPurpose::Search, "SEARCH", initial, 16);
+        return true;
+      }
+      return false;
+    case Kind::SelectScenePage:
+      if (index >= kSceneCount || command.value < 0 ||
+          static_cast<std::size_t>(command.value) >= PageCount(static_cast<Scene>(index)) || TopModal() != nullptr) return false;
+      NativeCancelGesture();
+      GoToScene(static_cast<Scene>(index));
+      SetPage(static_cast<std::uint8_t>(command.value));
+      nativeFocusedCell_ = 0xFF;
+      return true;
+    case Kind::RollWindow: return false; // viewport belongs to the display adapter
+    case Kind::RollLane:
+      if (TopModal() != nullptr || state_.scene != Scene::Sequence || CurrentPage() != 0) return false;
+      host_.Sequencer().CycleEditLane();
+      return true;
+    case Kind::RollNote:
+    {
+      auto& sequencer = host_.Sequencer();
+      if (TopModal() != nullptr || state_.scene != Scene::Sequence || CurrentPage() != 0 ||
+          index >= sequencer.TrackStepCount(state_.track) || command.value < 0 || command.value > 127) return false;
+      const auto note = static_cast<std::uint8_t>(command.value);
+      if (!state_.keyboard.multiSelect) sequencer.ClearSelectedSteps();
+      sequencer.SetStepSelected(index, true);
+      state_.noteLane[state_.track] = note;
+      if (sequencer.ToggleStepNotes(state_.track, index, &note, 1)) MarkDirty();
+      return true;
+    }
+    case Kind::TrackMapCell:
+      if (index >= kGridCount || TopModal() != nullptr) return false;
+      NativeCancelGesture();
+      MixGrid(index);
+      return true;
     case Kind::SelectPage:
       if (index >= PageCount(state_.scene) || TopModal() != nullptr) return false;
       NativeCancelGesture();
@@ -507,6 +546,7 @@ bool Controller::Dispatch(const native::Command& command, std::uint32_t nowMs)
       state_.sessionTrack = static_cast<std::size_t>(command.value);
       if (index < state_.sessionScroll) state_.sessionScroll = index;
       if (index >= state_.sessionScroll + kRows) state_.sessionScroll = index - kRows + 1;
+      SessionGrid((index - state_.sessionScroll) * kGridColumns + static_cast<std::size_t>(command.value));
       return true;
     case Kind::FocusMaster:
       if (TopModal() != nullptr || state_.scene != Scene::Tape || CurrentPage() != kTapeMix) return false;

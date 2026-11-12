@@ -16,6 +16,13 @@ enum class Kind : std::uint8_t {
   Context,         // modal second action (sample options or merge a captured take)
   SelectScene,     // index = groove::Scene
   SelectTrack,     // index = track 0..3
+  TextKey,        // ASCII or -1 backspace, -2 left, -3 right, -4 clear
+  Search,         // open browser search field
+  SelectScenePage, // index = scene, value = page
+  RollWindow,     // view: index = time delta in steps, value = pitch delta
+  RollNote,       // index = absolute step, value = MIDI note; toggle one note
+  RollLane,       // cycle NOTE / LEN / VEL / TIME / HITS
+  TrackMapCell,    // index = row * 4 + track: select / mute / solo / seq
   SelectPage,      // index = page in the current scene
   FocusCell,       // index = semantic page cell 0..15; focus only
   ActivateCell,    // index = semantic page cell 0..15; explicit action

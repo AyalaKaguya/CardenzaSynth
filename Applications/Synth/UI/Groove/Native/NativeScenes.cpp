@@ -283,7 +283,7 @@ void View::SlotPage(Gfx& g, const Controller& controller, Animator& animator, co
     const auto& slot = page.slots[index];
     if (slot.Empty()) continue;
     const Rect rect = layout::Cell(index);
-    if (slot.IsAction()) Action(g, rect, slot.label, "ENTER", index == focus, color);
+    if (slot.IsAction()) Action(g, rect, slot.label, "", index == focus, color);
     else
     {
       synth::SynthParameterInfo info;
@@ -297,7 +297,7 @@ void View::SlotPage(Gfx& g, const Controller& controller, Animator& animator, co
                         index == focus, !available, metrics, flash, animator.Now(), false);
     }
     if (current) render::PaintGridRipple(g, animator, index, rect, kInk);
-    AddHit(rect, {Kind::FocusCell, static_cast<int>(index)});
+    AddHit(rect, {slot.IsAction() ? Kind::ActivateCell : Kind::FocusCell, static_cast<int>(index)});
   }
   if (current && focus < page.slots.size() && page.slots[focus].IsParameter())
     render::PaintFocus(g, animator, layout::Cell(focus), Animator::Key("native-slot-focus",
@@ -355,6 +355,11 @@ void View::Sequence(Gfx& g, const Controller& controller, Animator& animator, st
     return;
   }
 
+  if (controller.View() == SeqView::Roll)
+  {
+    PianoRoll(g, controller, animator);
+    return;
+  }
   render::StepMachineLayout scene;
   scene.matrix = Rect{56, 56, 368, 120};
   scene.grid = Rect{56, 228, 368, 196};
@@ -384,6 +389,92 @@ void View::Sequence(Gfx& g, const Controller& controller, Animator& animator, st
     g.Fill(band, kBlack);
     g.TextAligned(band, "SEQUENCE OFF - SEQ > TRACK", (animator.Now() / 500) % 2 ? kDim : kFaint, Font::Small, Align::Center);
   }
+}
+
+// The roll owns its screen geometry; editing commands carry step/pitch values,
+// so future external controls can use the same controller without screen coordinates.
+void View::PianoRoll(Gfx& g, const Controller& controller, Animator& animator)
+{
+  const auto& state = controller.State();
+  const auto& sequencer = controller.HostView().Sequencer();
+  const auto seq = sequencer.BuildUiState(state.track);
+  const auto count = sequencer.TrackStepCount(state.track);
+  rollFirstStep_ = std::min(rollFirstStep_, count == 0 ? std::size_t{0} : (count - 1) / 8 * 8);
+  const Color color = TrackColor(state.track);
+  const std::array<const char*, 4> labels{{"< TIME", "TIME >", "PITCH -", "PITCH +"}};
+  const std::array<Command, 4> commands{{{Kind::RollWindow, -8}, {Kind::RollWindow, 8},
+      {Kind::RollWindow, 0, -8}, {Kind::RollWindow, 0, 8}}};
+  for (std::size_t i = 0; i < 4; ++i)
+  {
+    const Rect button{56 + static_cast<int>(i) * 94, 56, 86, 36};
+    g.Stroke(button, kDim);
+    g.TextAligned(button, labels[i], kInk, Font::Small, Align::Center);
+    AddHit(button, commands[i]);
+  }
+  constexpr int x0 = 96, y0 = 112, width = 320, height = 256, column = 40, rowHeight = 32;
+  for (int row = 0; row < 8; ++row)
+  {
+    const int note = rollLowNote_ + 7 - row;
+    const int pitch = note % 12;
+    const bool black = pitch == 1 || pitch == 3 || pitch == 6 || pitch == 8 || pitch == 10;
+    const Rect key{56, y0 + row * rowHeight, 38, rowHeight - 1};
+    g.Fill(key, black ? kShade : kFaint);
+    g.TextAligned(key, NoteName(static_cast<std::uint8_t>(note)), kInk, Font::Small, Align::Center);
+    for (std::size_t step = 0; step < 8; ++step)
+    {
+      const auto absolute = rollFirstStep_ + step;
+      const Rect cell{x0 + static_cast<int>(step) * column, key.y, column - 1, rowHeight - 1};
+      g.Fill(cell, black ? kShade : kBlack);
+      g.Stroke(cell, absolute < count ? kFaint : kShade);
+      if (absolute < count) AddHit(cell, {Kind::RollNote, static_cast<int>(absolute), note});
+    }
+  }
+  for (std::size_t step = 0; step < 8 && rollFirstStep_ + step < count; ++step)
+  {
+    const auto absolute = rollFirstStep_ + step;
+    const Rect heading{x0 + static_cast<int>(step) * column, 94, column - 1, 16};
+    const bool selected = sequencer.StepSelected(absolute);
+    if (selected) g.Fill(heading, color);
+    g.TextAligned(heading, std::to_string(absolute + 1), selected ? kBlack : kDim, Font::Small, Align::Center);
+    AddHit(heading, {Kind::SelectStep, static_cast<int>(absolute)});
+  }
+  const Rect clip{x0, y0, width, height};
+  g.SetClip(clip);
+  // Include earlier starts so sustained notes remain visible across time windows.
+  for (std::size_t step = 0; step < std::min(count, rollFirstStep_ + 8); ++step)
+  {
+    std::array<synth::SynthSequencer::StepNoteView, 8> notes{};
+    const auto n = sequencer.StepNoteEvents(state.track, step, notes);
+    for (std::size_t slot = 0; slot < n; ++slot)
+    {
+      const auto& note = notes[slot];
+      if (note.note < rollLowNote_ || note.note >= rollLowNote_ + 8) continue;
+      const int y = y0 + (rollLowNote_ + 7 - note.note) * rowHeight + 7;
+      const int pulse = (static_cast<int>(step) - static_cast<int>(rollFirstStep_)) * synth::kSequencerPulsesPerStep +
+          note.microstep * synth::kSequencerPulsesPerMicrostep;
+      for (std::uint8_t hit = 0; hit < note.hits; ++hit)
+      {
+        const int start = pulse + hit * synth::SequencerHitSpacingPulses(note.hits);
+        const int end = start + synth::SequencerHitGatePulses(note.hits, hit, note.lengthPulses);
+        const int left = x0 + static_cast<int>(std::floor(static_cast<float>(start * column) / synth::kSequencerPulsesPerStep));
+        const int right = x0 + static_cast<int>(std::floor(static_cast<float>(end * column) / synth::kSequencerPulsesPerStep));
+        if (right <= x0 || left >= x0 + width) continue;
+        const Rect bar{left, y, std::max(2, right - left - 2), 18};
+        g.Fill(bar, color);
+        g.VLine(left, y, 18, kInk);
+      }
+    }
+  }
+  const auto current = seq.tracks[state.track].currentStep;
+  if (seq.playing && current >= rollFirstStep_ && current < rollFirstStep_ + 8)
+    g.VLine(x0 + static_cast<int>(current - rollFirstStep_) * column, y0, height, kPlay);
+  g.SetClip(layout::kCenter);
+  if (!seq.tracks[state.track].enabled)
+    g.Text(56, 369, "SEQ OFF", kRec, Font::Micro);
+  const Rect lane{56, 380, 368, 36};
+  g.Stroke(lane, color);
+  g.TextAligned(lane, std::string(synth::SequencerEditLaneLabel(seq.editLane)) + " " + seq.valueLabel + "  >", kInk, Font::Small, Align::Center);
+  AddHit(lane, {Kind::RollLane});
 }
 
 void View::Tape(Gfx& g, const Controller& controller, Animator& animator, std::uint8_t page)
@@ -431,7 +522,7 @@ void View::Tape(Gfx& g, const Controller& controller, Animator& animator, std::u
         if (controller.NativeFocusedCell() == index)
           render::PaintFocus(g, animator, rect, Animator::Key("native-mix-focus"), TrackColor(track));
         render::PaintGridRipple(g, animator, index, rect, kInk);
-        AddHit(rect, {Kind::FocusCell, static_cast<int>(index)});
+        AddHit(rect, {Kind::TrackMapCell, static_cast<int>(index)});
       }
     }
     const Rect master{56, 384, 368, 40};
@@ -527,9 +618,9 @@ void View::Setup(Gfx& g, const Controller& controller, Animator& animator, std::
   static constexpr std::array<const char*, 3> actions{{"SAVE", "LOAD", "NEW"}};
   for (std::size_t i = 0; i < actions.size(); ++i)
   {
-    Action(g, layout::Cell(i), actions[i], "ENTER", controller.NativeFocusedCell() == i, kEsc);
+    Action(g, layout::Cell(i), actions[i], "", controller.NativeFocusedCell() == i, kEsc);
     render::PaintGridRipple(g, animator, i, layout::Cell(i), kInk);
-    AddHit(layout::Cell(i), {Kind::FocusCell, static_cast<int>(i)});
+    AddHit(layout::Cell(i), {Kind::ActivateCell, static_cast<int>(i)});
   }
   const auto seq = host.Sequencer().BuildUiState(state.track);
   const std::array<std::string, 4> values{{std::to_string(seq.bpm), std::to_string(seq.swing) + "%", "TAP", seq.songMode ? "SONG" : "LOOP"}};

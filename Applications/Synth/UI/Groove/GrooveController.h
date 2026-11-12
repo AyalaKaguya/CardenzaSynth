@@ -670,7 +670,6 @@ private:
   bool NativeFocusCell(std::size_t index);
   void NativeEnter();
   void NativeCancelGesture();
-  void SaveProjectAutomatic();
   std::uint8_t nativeFocusedCell_ = 0xFF;
   bool nativeSampleSaving_ = false;
   NativePresentationEvents nativePresentation_{};

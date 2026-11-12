@@ -374,32 +374,66 @@ void View::Layers(Gfx& g, const Controller& controller, Animator& animator, Laye
   (void)render::GrowOverlay(g, layout::kCenter, layout::kCenter, source, accent, progress);
   if (layer == Layer::Scenes)
   {
-    static constexpr std::array<const char*, 4> detail{{"PROJECT / DEVICE", "SOUND / PARAMETERS", "PATTERNS / STEPS", "SONG / MIXER"}};
-    for (std::size_t i = 0; i < 4; ++i)
+    // A scene column is a navigation list, not an action card. Keep every
+    // title and page on the same baseline, regardless of the page count.
+    const Rect overlayClip = g.Clip();
+    constexpr int headingHeight = 76;
+    constexpr int rowHeight = 32;
+    constexpr int padding = 6;
+    for (std::size_t i = 0; i < kSceneCount; ++i)
     {
-      const Rect rect = render::DropInTile(layout::Span(i / 2 * 2, i % 2 * 2, 2, 2), progress, i * 2, 12);
-      const bool current = static_cast<std::size_t>(controller.State().scene) == i;
-      MapTile(g, rect, std::to_string(i) + " " + kSceneNames[i], detail[i], current, kEsc, animator.Now());
-      render::PaintGridRipple(g, animator, i, rect, kEsc);
-      const auto count = controller.PageCount(static_cast<Scene>(i));
-      for (std::size_t page = 0; page < count && page < 6; ++page)
-        g.TextFit(rect.x + 8, rect.y + 37 + static_cast<int>(page) * 16, rect.width - 16,
-                  controller.PageTab(static_cast<Scene>(i), page), current ? kBlack : kDim, Font::Small);
-      AddHit(rect, {Kind::SelectScene, static_cast<int>(i)});
+      const Rect rect = layout::Span(0, i, 4, 1);
+      const auto scene = static_cast<Scene>(i);
+      const bool current = controller.State().scene == scene;
+      const Color ink = current ? kBlack : kInk;
+      const Color secondary = current ? kBlack : kDim;
+      const int left = std::max(rect.x, overlayClip.x);
+      const int top = std::max(rect.y, overlayClip.y);
+      const int right = std::min(rect.x + rect.width, overlayClip.x + overlayClip.width);
+      const int bottom = std::min(rect.y + rect.height, overlayClip.y + overlayClip.height);
+      g.SetClip(Rect{left, top, std::max(0, right - left), std::max(0, bottom - top)});
+      g.Fill(rect, current ? kInk : kBlack);
+      g.Stroke(rect, current ? kEsc : kDim);
+      g.Text(rect.x + padding, rect.y + 10, std::to_string(i), current ? kBlack : kEsc, Font::Huge);
+      const Rect title{rect.x + padding, rect.y + 40, rect.width - padding * 2, 22};
+      const Font titleFont = Gfx::Measure(kSceneNames[i], Font::Large) <= title.width ? Font::Large : Font::Small;
+      g.TextAligned(title, kSceneNames[i], ink, titleFont, Align::Left);
+      g.HLine(rect.x + padding, rect.y + headingHeight - 6, rect.width - padding * 2, secondary);
+      AddHit(Rect{rect.x, rect.y, rect.width, headingHeight}, {Kind::SelectScene, static_cast<int>(i)});
+      const auto count = controller.PageCount(scene);
+      for (std::size_t page = 0; page < count; ++page)
+      {
+        const Rect item{rect.x + 3, rect.y + headingHeight + static_cast<int>(page) * rowHeight, rect.width - 6, rowHeight};
+        if (item.y + item.height > rect.y + rect.height - padding) break;
+        const bool selected = controller.State().page[i] == page;
+        const auto text = controller.PageTab(scene, page);
+        const Font font = Gfx::Measure(text, Font::Small) <= item.width - 6 ? Font::Small : Font::Micro;
+        if (selected) g.Fill(Rect{item.x, item.y + 4, item.width, rowHeight - 8}, current ? kBlack : kDim);
+        const Color textColor = selected ? (current ? kInk : kBlack) : secondary;
+        g.TextAligned(Rect{item.x + 3, item.y, item.width - 6, item.height}, text, textColor, font, Align::Left);
+        AddHit(item, {Kind::SelectScenePage, static_cast<int>(i), static_cast<int>(page)});
+      }
+      g.SetClip(overlayClip);
     }
   }
   else if (layer == Layer::Tracks)
   {
     for (std::size_t track = 0; track < kTrackCount; ++track)
     {
-      const Rect rect = render::DropInTile(layout::Span(track, 0, 1, 4), progress, track, 12);
+      const Rect rect = render::DropInTile(layout::Cell(track), progress, track, 12);
       const auto* engine = controller.HostView().Engine(track);
-      MapTile(g, rect, "T" + std::to_string(track + 1) + "  " + std::string(EngineShortName(controller.HostView().EngineKind(track))),
+      MapTile(g, rect, "T" + std::to_string(track + 1) + " " + std::string(EngineShortName(controller.HostView().EngineKind(track))),
              engine == nullptr ? "NO ENGINE" : engine->CurrentPresetName(), controller.State().track == track, TrackColor(track), animator.Now());
-      widgets::LevelBar(g, Rect{rect.x + 198, rect.y + 52, 154, 5}, animator.MeterPeak(track),
-                        controller.State().track == track ? kBlack : TrackColor(track), controller.State().track == track ? kDim : kFaint);
       render::PaintGridRipple(g, animator, track, rect, kTab);
-      AddHit(rect, {Kind::SelectTrack, static_cast<int>(track)});
+      AddHit(rect, {Kind::TrackMapCell, static_cast<int>(track)});
+      for (std::size_t row = 1; row < 4; ++row)
+      {
+        const auto cell = row * kTrackCount + track;
+        const Rect badge = render::DropInTile(layout::Cell(cell), progress, row + track, 12);
+        render::PaintMixBadge(g, controller, animator, badge, track, row - 1, Font::Small);
+        render::PaintGridRipple(g, animator, cell, badge, kTab);
+        AddHit(badge, {Kind::TrackMapCell, static_cast<int>(cell)});
+      }
     }
   }
   else if (layer == Layer::Pages)
@@ -490,7 +524,7 @@ void View::Render(Gfx& g, Controller& controller, Animator& animator)
     hud.box = Rect{64, 374, 352, 48};hud.labelFont = Font::Small;hud.valueFont = Font::Large;
     hud.labelY = 7;hud.valueY = 23;hud.meterWidth = 130;hud.meterHeight = 6;hud.meterY = 27;
     hud.valueMeterReserve = 160;
-    if (state.toast.text.empty()) render::DrawHud(g, controller, animator, hud);
+    if (state.toast.text.empty() && !(state.scene == Scene::Sequence && controller.CurrentPage() == 0 && controller.View() == SeqView::Roll)) render::DrawHud(g, controller, animator, hud);
     render::ToastStyle toast;
     toast.band = Rect{56, 464, 368, 14};toast.textX = 65;toast.textY = 466;
     toast.markerX = 56;toast.markerY = 465;toast.maxCharacters = 58;
@@ -527,6 +561,12 @@ void View::Tick(Controller& controller, std::uint32_t nowMs)
 {
   const auto generation = Generation(controller);
   if (generation != renderGeneration_ && layer_ != Layer::None) SetLayer(controller, Layer::None, nowMs);
+  if (pointerDown_ && !pointerCancelled_ && pressed_.localLayer &&
+      !holdOpened_ && layer_ != pressed_.layer && pressGeneration_ == generation && nowMs - pressedAt_ >= kHoldMs)
+  {
+    SetLayer(controller, pressed_.layer, nowMs);
+    holdOpened_ = true;
+  }
   for (auto& pointer : performancePointers_)
   {
     if (!pointer.active || pointer.cancelled) continue;
@@ -606,10 +646,27 @@ bool View::Pointer(Controller& controller, const Device::Touch::Event& event, st
       pressed_ = hits_[i - 1];
       pointerId_ = event.id;
       pointerDown_ = true;
+      pressedAt_ = nowMs;
+      holdOpened_ = false;
       pointerCancelled_ = false;
       pressGeneration_ = Generation(controller);
       if (pressed_.side)
       {
+        const auto role = static_cast<KeyRole>(pressed_.command.index);
+        if ((layer_ == Layer::Tracks || layer_ == Layer::Pages) && (role == KeyRole::Add || role == KeyRole::Sub))
+        {
+          const bool tracks = layer_ == Layer::Tracks;
+          const auto count = tracks ? kTrackCount : controller.PageCount(controller.State().scene);
+          const auto current = tracks ? controller.State().track : controller.CurrentPage();
+          if (count > 0)
+          {
+            const auto next = role == KeyRole::Add ? (current + 1) % count : (current + count - 1) % count;
+            (void)controller.Dispatch({tracks ? Kind::SelectTrack : Kind::SelectPage, static_cast<int>(next)}, nowMs);
+          }
+          renderGeneration_ = Generation(controller);
+          pointerCancelled_ = true;
+          return true;
+        }
         SetLayer(controller, Layer::None, nowMs);
         (void)controller.Dispatch(pressed_.command, nowMs);
         // ENTER can open a modal immediately. The release still belongs to this
@@ -625,7 +682,7 @@ bool View::Pointer(Controller& controller, const Device::Touch::Event& event, st
         int cell = -1;
         switch (pressed_.command.kind)
         {
-          case Kind::FocusCell: case Kind::RunMenu: case Kind::SelectPattern: cell = pressed_.command.index; break;
+          case Kind::TrackMapCell: case Kind::FocusCell: case Kind::RunMenu: case Kind::SelectPattern: cell = pressed_.command.index; break;
           case Kind::SelectStep: cell = pressed_.command.index % static_cast<int>(kGridCount); break;
           case Kind::SelectSongCell:
             cell = (pressed_.command.index - static_cast<int>(controller.State().songScroll)) * 4 + pressed_.command.value; break;
@@ -657,19 +714,46 @@ bool View::Pointer(Controller& controller, const Device::Touch::Event& event, st
   }
   if (event.kind == Device::Touch::Kind::Up)
   {
+    Tick(controller, nowMs);
     const Hit hit = pressed_;
+    const bool heldOpen = holdOpened_;
     const bool activate = !pointerCancelled_ && pressGeneration_ == Generation(controller) && layout::Contains(hit.rect, event.x, event.y);
     EndPointer(controller, nowMs);
     if (activate && !hit.side)
     {
       if (hit.localLayer)
       {
-        SetLayer(controller, layer_ == hit.layer ? Layer::None : hit.layer, nowMs);
+        if (heldOpen) return true;
+        if (layer_ == hit.layer) SetLayer(controller, Layer::None, nowMs);
+        else
+        {
+          SetLayer(controller, Layer::None, nowMs);
+          // Run the controller's actual tap action rather than duplicating its
+          // navigation rules. FN intentionally opens its persistent menu on tap.
+          const auto role = hit.layer == Layer::Scenes ? KeyRole::Esc :
+              hit.layer == Layer::Tracks ? KeyRole::Tab : hit.layer == Layer::Menu ? KeyRole::Fn : KeyRole::Ctrl;
+          (void)controller.Dispatch({Kind::SideDown, static_cast<int>(role)}, nowMs);
+          (void)controller.Dispatch({Kind::SideUp, static_cast<int>(role)}, nowMs);
+        }
       }
       else
       {
-        (void)controller.Dispatch(hit.command, nowMs);
-        SetLayer(controller, Layer::None, nowMs);
+        if (hit.command.kind == Kind::RollWindow)
+        {
+          const auto count = controller.HostView().Sequencer().TrackStepCount(controller.State().track);
+          const int last = count == 0 ? 0 : static_cast<int>((count - 1) / 8 * 8);
+          rollFirstStep_ = static_cast<std::size_t>(std::clamp(static_cast<int>(rollFirstStep_) + hit.command.index, 0, last));
+          rollLowNote_ = std::clamp(rollLowNote_ + hit.command.value, 0, 120);
+        }
+        else (void)controller.Dispatch(hit.command, nowMs);
+        if (hit.command.kind == Kind::TrackMapCell ||
+            (layer_ == Layer::Scenes && (hit.command.kind == Kind::SelectScene || hit.command.kind == Kind::SelectScenePage)) ||
+            (layer_ == Layer::Pages && hit.command.kind == Kind::SelectPage))
+        {
+          // Navigation changes the view generation, but keeps the latched map open.
+          renderGeneration_ = Generation(controller);
+        }
+        else SetLayer(controller, Layer::None, nowMs);
       }
     }
     return true;
