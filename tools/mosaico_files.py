@@ -74,7 +74,7 @@ def http(scope, url: str, path: str, *, method: str = "GET", body: bytes | None 
 
 
 def execute(args, tool_root: Path, scope, context) -> dict:
-    from mosaico_cli.gateway import connected_devices, ensure_gateway, select_device
+    from mosaico_cli.gateway import connected_devices, ensure_gateway, select_device, wait_for_data_link
     from mosaico_cli.project import resolve_project
 
     project = resolve_project(context.workspace, args.project, Path.cwd())
@@ -83,7 +83,7 @@ def execute(args, tool_root: Path, scope, context) -> dict:
         raise ValueError("native-files accepts only the CardenzaSynthMosaicoNative application project")
     args.project = str(project)
     payload = None
-    local = args.local.expanduser().resolve()
+    local = args.local.expanduser().resolve() if args.action in {"put", "get"} else None
     if args.action == "put":
         if not local.is_file() or local.stat().st_size > MAX_BYTES:
             raise ValueError("Upload must be a regular file no larger than 32 MiB")
@@ -91,11 +91,12 @@ def execute(args, tool_root: Path, scope, context) -> dict:
             payload = source.read(MAX_BYTES + 1)
         if len(payload) > MAX_BYTES:
             raise ValueError("Upload grew beyond 32 MiB")
-    elif local.exists() and not args.overwrite:
+    elif args.action == "get" and local.exists() and not args.overwrite:
         raise ValueError("Download destination already exists; use --overwrite to replace it")
 
     session = ensure_gateway(context, None)
-    select_device(connected_devices(context, session), args.device_id)
+    device = select_device(connected_devices(context, session), args.device_id)
+    wait_for_data_link(context, session, device, timeout=5)
     if len(session.connection_args) != 2 or session.connection_args[0] != "--url":
         raise RuntimeError("native-files requires the selected project's local Gateway")
     url = session.connection_args[1]
@@ -106,20 +107,41 @@ def execute(args, tool_root: Path, scope, context) -> dict:
     before = identity(http(scope, url, prefix), args.device_id)
     volumes = http(scope, url, prefix + "/files/volumes")
     available = next((item for item in volumes.get("volumes", []) if item.get("id") == VOLUME), None)
-    required = {"read", "write", "atomic_replace"} if args.action == "put" else {"read"}
+    required = {"put": {"read", "write", "atomic_replace"}, "get": {"read"},
+                "list": {"list"}, "delete": {"delete"}}[args.action]
     if available is None or not required.issubset(set(available.get("capability_names", []))):
         raise RuntimeError("Native application volume does not expose the required file capabilities")
     query = urlencode({"volume": VOLUME, "path": args.relative})
-    operation_id = str(uuid.uuid4()) if args.action == "put" else None
+    operation_id = str(uuid.uuid4()) if args.action in {"put", "delete"} else None
     context.note(f"native-files {args.action} device={args.device_id} path={args.relative} operation_id={operation_id}")
     common = {"command": "native-files", "action": args.action, "device_id": args.device_id,
               "boot_id": before[1], "volume": VOLUME, "path": args.relative,
-              "local": str(local), "log": str(context.log_path)}
+              "log": str(context.log_path)}
+    if local is not None:
+        common["local"] = str(local)
+    if args.action == "list":
+        result = http(scope, url, prefix + "/files?" + query + "&" + urlencode({"cursor": args.cursor, "limit": args.limit}))
+        if identity(http(scope, url, prefix), args.device_id) != before:
+            raise RuntimeError("Device boot/firmware changed during listing")
+        return {**common, "ok": True, "listing": result}
     if operation_id:
         common["operation_id"] = operation_id
         # Preserve the identifier before transmission, including when the HTTP
         # connection fails after the device may already have committed bytes.
         (context.directory / "operation.json").write_text(json.dumps(common), encoding="utf-8")
+        if args.action == "delete":
+            # One explicit file only; no recursive deletion and no replay after an uncertain write.
+            meta = http(scope, url, prefix + "/files/stat?" + query)
+            if meta.get("kind") != "file":
+                raise ValueError("Deletion requires an existing regular file")
+            response = http(scope, url, prefix + "/file?" + query,
+                            method="DELETE", operation_id=operation_id)
+            result = response.get("file", {})
+            if result.get("deleted") is not True:
+                raise RuntimeError(f"Deletion was not confirmed; inspect operation {operation_id}")
+            if identity(http(scope, url, prefix), args.device_id) != before:
+                raise RuntimeError(f"Device boot/firmware changed during deletion; inspect operation {operation_id}")
+            return {**common, "ok": True, "file": result}
         response = http(scope, url, prefix + "/file?" + query + "&overwrite=" + str(args.overwrite).lower(),
                         method="PUT", body=payload, operation_id=operation_id, timeout=300)
         result = response.get("file", {})
@@ -164,17 +186,23 @@ def execute(args, tool_root: Path, scope, context) -> dict:
 def main(argv=None, *, tool_root: Path) -> int:
     parser = argparse.ArgumentParser(prog="mosaico.py native-files", description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
-    for action in ("put", "get"):
+    for action in ("put", "get", "list", "delete"):
         command = commands.add_parser(action)
         if action == "put":
             command.add_argument("local", type=Path)
             command.add_argument("relative", type=relative_path)
-        else:
+        elif action == "get":
             command.add_argument("relative", type=relative_path)
             command.add_argument("local", type=Path)
+        else:
+            command.add_argument("relative", type=relative_path)
+        if action == "list":
+            command.add_argument("--cursor", type=int, default=0)
+            command.add_argument("--limit", type=int, choices=range(1, 201), default=100, metavar="1..200")
         command.add_argument("--project", default="Devices/MosaicoNative")
         command.add_argument("--device-id", required=True)
-        command.add_argument("--overwrite", action="store_true")
+        if action in {"put", "get"}:
+            command.add_argument("--overwrite", action="store_true")
         command.add_argument("--json", action="store_true", help="Accepted for consistency; output is always JSON")
     args = parser.parse_args(argv)
     from mosaico_cli.errors import MosaicoError

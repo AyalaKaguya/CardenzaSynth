@@ -124,7 +124,7 @@ extern "C" void app_main()
   volume.id = "native";
   volume.base_path = kAppRoot;
   volume.capabilities = ESP_IRIS_FILE_VOLUME_READ | ESP_IRIS_FILE_VOLUME_LIST | ESP_IRIS_FILE_VOLUME_MTIME |
-      ESP_IRIS_FILE_VOLUME_WRITE | ESP_IRIS_FILE_VOLUME_ATOMIC_REPLACE | ESP_IRIS_FILE_VOLUME_HASH;
+      ESP_IRIS_FILE_VOLUME_WRITE | ESP_IRIS_FILE_VOLUME_DELETE | ESP_IRIS_FILE_VOLUME_ATOMIC_REPLACE | ESP_IRIS_FILE_VOLUME_HASH;
   ESP_ERROR_CHECK_WITHOUT_ABORT(esp_iris_file_volume_register_deferred(&volume, FileStatus, nullptr));
   iris_ota_support_start();
   ESP_LOGI(kTag, "firmware=%s IDF=%s target=esp32s31", esp_app_get_description()->version, esp_get_idf_version());

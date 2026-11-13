@@ -38,9 +38,8 @@ constexpr std::size_t kMaxProjectBytes = 4 * 1024 * 1024;
 // Version 7 gives every pattern its own length, up to 256 steps: the T line ends with the length of
 // each pattern instead of the one length of the track.
 // Version 8 adds HITS (a note fired 1..4 times in its step): the T line gains the track's new-note
-// hits after its new-note length, and every note line a seventh number, the note's hits. It is read
-// already and written once kProjectWriteVersion becomes 8 (ProjectStorage.h); older files read as one
-// hit per note. The next format change after it takes 9.
+// hits after its new-note length, and every note line a seventh number, the note's hits. Older files
+// read as one hit per note. The next format change after it takes 9.
 constexpr int kMinProjectVersion = 1;
 static_assert(kProjectWriteVersion == 7 || kProjectWriteVersion == 8, "This writer knows formats 7 and 8.");
 static_assert(kProjectReadVersion == 8, "This reader knows formats 1 to 8.");

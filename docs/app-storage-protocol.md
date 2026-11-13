@@ -54,7 +54,7 @@ This reference defines paths, formats, ownership and compatibility. Code: `OS/St
 | Content | Format | Compatibility |
 |---|---|---|
 | `Settings/*.cfg` | ASCII text, `key=value` lines | Unknown keys survive a read / write cycle |
-| `Projects/*.ccproj`, `Session/autosave.ccproj` | Text beginning with `CARDENZA_PROJECT 7` | Reads v1–v8; writes v7 (v8 from the next test build) |
+| `Projects/*.ccproj`, `Session/autosave.ccproj` | Text beginning with `CARDENZA_PROJECT 8` | Reads v1–v8; writes v8 |
 | `Session/autosave.txt`, `Session/restoring.txt` | `key=value` lines | Written whole by the groovebox; other keys are not kept |
 | `Presets/<engine>/user.ccpreset` | Text beginning with `CARDENZA_PRESETS 1 "<engine-id>"` | Preset format 1 |
 | `Samples/*.wav`, `Session/take-*.wav` | Mono PCM16 WAV | File names and project references stay valid |
@@ -65,10 +65,11 @@ preset or WAV formats. Project format 6 added the keyboard and each track's chor
 format 7 gives every pattern its own length (up to 256 steps). Version 5 was only written by
 unreleased development builds (its `PLAY` line is skipped). Format 8 adds HITS (a note fired 1–4
 times in its step): each `T` line gains the track's new-note hits after its new-note length, and every
-note line a seventh number, the note's hits. It is read already and written from the one format bump
-of the next test build (`kProjectWriteVersion`); until then projects are written as format 7 and keep
-no hits. Older formats read as one hit per note. The 0.1.0 release reads formats 1–6: a project saved
-by this firmware is format 7.
+note line a seventh number, the note's hits. Projects and the autosave both write format 8
+(`kProjectWriteVersion`), so HITS survive saving, restarting and a Learn guide session. HITS-only
+changes also change the project fingerprint used by the autosave. Older formats read as one hit
+per note. The 0.1.0 release reads formats 1–6; firmware that reads at most format 7 cannot open a
+project saved by this firmware. Keep an older copy when it must also open on older firmware.
 
 ### Settings syntax
 

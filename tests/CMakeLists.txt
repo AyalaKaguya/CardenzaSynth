@@ -5,6 +5,7 @@ add_executable(CardenzaCoreTests
   ${PROJECT_SOURCE_DIR}/OS/Framework/Midi/MidiPacket.cpp
 )
 target_include_directories(CardenzaCoreTests PRIVATE ${PROJECT_SOURCE_DIR})
+target_compile_definitions(CardenzaCoreTests PRIVATE CARDENZA_PROJECT_TEST_HOOKS=1)
 add_test(NAME CardenzaCoreTests COMMAND CardenzaCoreTests)
 
 # Arpeggiator: the sequencer built with its test hooks, so the clock can be stepped by hand.
@@ -23,7 +24,7 @@ endif()
 add_test(NAME CardenzaArpTests COMMAND CardenzaArpTests)
 
 # HITS (a note fired 1..4 times in its step): playback on the hand-stepped clock, the lane edits, and
-# the project formats 7 and 8 (the storage's test hook writes format 8 before the bump).
+# format 8 persistence and format 7 compatibility (the storage's test hook writes old fixtures).
 add_executable(CardenzaHitsTests
   hits_test.cpp
   ${PROJECT_SOURCE_DIR}/Applications/Synth/Runtime/ProjectStorage.cpp

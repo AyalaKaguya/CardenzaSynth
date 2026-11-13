@@ -16,6 +16,9 @@
   后台任务不直接访问设置对象或注册表。
 - 本目录的 `Touch`、`Microphone`、`Storage` 负责设备适配，合成器、音序器和
   控制器继续由共享业务层提供。
+- `components/esp-mosaico-bsp` 只配置本应用使用的 BSP 外设范围，直接编译固定子模块中的
+  电源、音频、显示、NAND 等原始驱动。运动传感器源码与 API 不加入此目标，避免依赖
+  只提供到 ESP-IDF 6.2 的 BMI270 预编译库；此目标可继续使用官方最新 master。
 
 ## 原生钢琴窗
 
@@ -59,6 +62,10 @@ TIME、ADD / SUB 和菜单翻页复用共享控制器的选择处理规则（单
 每次构建前同步官方 ESP-IDF master 最新提交及其子模块，再记录本次 SHA；
 此前的 SHA 只用于追溯，不约束后续构建。SDK 更新后使用独立构建目录重新编译。
 `mosaico.py native-files --help` 和 `mosaico.py native-touch --help` 分别说明文件与触控工具。
+工程和自动保存使用格式 8，保留 HITS 与 NEW HITS；旧格式仍可读取，旧固件不能打开格式 8。
+`native-files list Projects --device-id <id>` 查看工程；
+`native-files delete Projects/<name>.ccproj --device-id <id>` 删除指定文件。
+删除不递归，设备身份和单次操作结果均须校验。
 离线打包入口为 `tools/mosaico_bundle.py --project Devices/MosaicoNative --idf-path <SDK路径>`。
 
 音频状态 RPC（`0x4343`，方法 `1`）只读，不启动播放。`volume` 是保存的主音量，

@@ -350,6 +350,12 @@ int main(int argc, char** argv)
   const std::uint8_t note = 64;
   groove->Sequencer().PressStep(3, &note, 1);
   groove->Sequencer().ReleaseStep(3);
+  {
+    auto state = groove->Sequencer().CaptureState();
+    state->tracks[synth::kDefaultActiveTrack].defaultHits = 2;
+    state->tracks[synth::kDefaultActiveTrack].patterns[0].steps.Edit(3).notes[0].SetHits(3);
+    assert(groove->Sequencer().RestoreState(*state));
+  }
   synth::ArpSettings arp;
   arp.mode = synth::ArpMode::Up;
   arp.rate = 2;
@@ -380,8 +386,14 @@ int main(int argc, char** argv)
   text = ReadText(synthSettings);
   assert(Contains(text, "future.synth=keep\n") && !Contains(text, "arp.") && !Contains(text, "keys.octave"));
   text = ReadText(product / "Projects" / "SONG 01.ccproj");
-  assert(text.find("CARDENZA_PROJECT 7\n") == 0 && Contains(text, "\nUI 0 1 0 0 0 ") && Contains(text, "\nKEYS 0 110\n"));
+  assert(text.find("CARDENZA_PROJECT 8\n") == 0 && Contains(text, "\nUI 0 1 0 0 0 ") && Contains(text, "\nKEYS 0 110\n"));
   assert(Contains(text, "\nPLAYFX 0 0 0 1 2 1 70 0\n") && Contains(text, "\nPLAYFX 1 0 0 0 3 1 50 0\n"));
+  {
+    synth::ProjectData saved;
+    assert(synth::LoadProjectFile("SONG 01", saved) == synth::ProjectResult::Ok);
+    const auto& track = saved.sequence->tracks[synth::kDefaultActiveTrack];
+    assert(track.defaultHits == 2 && track.patterns[0].steps[3].notes[0].Hits() == 3);
+  }
 
   // A short HOME press does nothing in the groovebox: the key is unassigned for now.
   const std::uint32_t panic = groove->Ui().State().panicAt;
@@ -411,6 +423,8 @@ int main(int argc, char** argv)
   SwitchTo("Cardenza/Synth");
   groove = &Groove();
   assert(groove->Sequencer().Tempo() == 133 && groove->Sequencer().BuildUiState(synth::kDefaultActiveTrack).steps[3].hasEvents);
+  assert(groove->Sequencer().BuildUiState(synth::kDefaultActiveTrack).steps[3].hits == 3);
+  assert(groove->Sequencer().CaptureState()->tracks[synth::kDefaultActiveTrack].defaultHits == 2);
   assert(groove->TrackLevel(1) == 42 && groove->Ui().State().projectName == "SONG 01");
   assert(groove->MasterVolume() == 60 && groove->LedBrightness() == 7 && groove->Backlight() == 150);
   assert(groove->Ui().State().keyboard.octave == 1 && groove->Sequencer().GetArpSettings(synth::kDefaultActiveTrack) == arp);
@@ -471,7 +485,7 @@ int main(int argc, char** argv)
     assert(groove->Sequencer().InsertNote(1, 0, 5, 0, 72, 100, 24));
     Tap(1, 1);
     Frames(140);
-    assert(WriteTimes(sessionFolder) != before && Contains(ReadText(autosave), "\n0 5 72 100 24 0\n"));
+    assert(WriteTimes(sessionFolder) != before && Contains(ReadText(autosave), "\n0 5 72 100 24 0 1\n"));
     assert(groove->Sequencer().ClearPatternEvents(1, 0));
     Tap(1, 1);
     Frames(140);

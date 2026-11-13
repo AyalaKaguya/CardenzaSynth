@@ -2799,7 +2799,7 @@ void TestReleaseProjects(Harness& h)
   assert(app.Sequencer().StepNoteEvents(0, 4, notes) == 1 && notes[0].note == 39);
   // Saving it writes it in place, in the current format, and the list shows it once.
   h.Chord(kFn, Key{2, 3});  // S
-  assert(read(ours / "DEMO-1.ccproj").rfind("CARDENZA_PROJECT 7\n", 0) == 0);
+  assert(read(ours / "DEMO-1.ccproj").rfind("CARDENZA_PROJECT 8\n", 0) == 0);
   { const auto all = app.ListProjects(); assert(std::count(all.begin(), all.end(), std::string("DEMO-1")) == 1); }
   assert(read(ours / "DEMO-2.ccproj") == kReleaseProject);
   // A new project goes there too.
@@ -3055,6 +3055,12 @@ void TestGuide(Harness& h)
   for (std::size_t step = 0; step < 16; ++step) (void)app.Sequencer().SetStepNotes(0, step, &kick, 0, 100);
   assert(app.Sequencer().SetStepNotes(0, 2, &kick, 1, 100));
   assert(hits(0) == 1);
+  {
+    auto working = app.Sequencer().CaptureState();
+    working->tracks[0].defaultHits = 2;
+    working->tracks[0].patterns[0].steps.Edit(2).notes[0].SetHits(3);
+    assert(app.Sequencer().RestoreState(*working));
+  }
 
   send("G?");
   assert(sent("G!1 g0"));
@@ -3201,6 +3207,7 @@ void TestGuide(Harness& h)
   assert(h.State().scene == Scene::Sequence && h.State().track == 0 && hits(0) == 1);
   std::array<synth::SynthSequencer::StepNoteView, 8> notes{};
   assert(app.Sequencer().StepNoteEvents(0, 2, notes) == 1 && app.Sequencer().PatternCount(0) == 1);
+  assert(notes[0].hits == 3 && app.Sequencer().CaptureState()->tracks[0].defaultHits == 2);
   assert(ui.GuideHint() == 0);
 
   // A page that goes quiet ends the guide by itself.
@@ -3210,6 +3217,8 @@ void TestGuide(Harness& h)
   h.Wait(31000);
   listen();
   assert(!ui.Guide() && sent("GX") && hits(0) == 1);
+  assert(app.Sequencer().StepNoteEvents(0, 2, notes) == 1 && notes[0].hits == 3);
+  assert(app.Sequencer().CaptureState()->tracks[0].defaultHits == 2);
   // While nothing runs, messages without G are ignored, and a guide message after the end is too.
   send("GH000d");
   assert(ui.GuideHint() == 0);

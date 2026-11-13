@@ -1,7 +1,7 @@
 dependencies:
   idf: ">=6.2"
   esp-mosaico-bsp:
-    override_path: "../../../tools/mosaico-vibe/submodule/esp-mosaico-bsp/components/esp-mosaico-bsp"
+    override_path: "../components/esp-mosaico-bsp"
   esp_iris:
     override_path: "../../../tools/mosaico-vibe/submodule/esp-mosaico-utils/ESP-Iris/components/esp_iris"
   joltwallet/littlefs: "==1.23.1"

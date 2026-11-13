@@ -1,6 +1,6 @@
 // HITS tests: a step's note fired 1..4 times inside its step. The sequencer is built with its test
 // hooks (the clock is stepped by hand, one pulse at a time) and the project storage with its own (to
-// write format 8 before the format bump).
+// keep format-7 compatibility fixtures while the normal writer saves format 8).
 #include "Applications/Synth/Runtime/ProjectStorage.h"
 #include "Applications/Synth/Runtime/Sequencer/SynthSequencer.h"
 
@@ -448,11 +448,10 @@ std::uint8_t LoadedHits(const synth::ProjectData& project, std::size_t step, std
 void TestFormat()
 {
   const synth::ProjectData project = HitsProject();
-  // Until the format bump this build writes format 7, without the hits: the file is what format 7
-  // always was, and the project loads with plain notes.
-  static_assert(synth::kProjectWriteVersion == 7, "HITS wait for the format bump of the next test build (format 8).");
+  static_assert(synth::kProjectWriteVersion == 8, "Projects and autosaves must preserve HITS.");
+  // An old format-7 file still loads with plain notes.
   const auto seven = projectDirectory / "seven.ccproj";
-  CHECK(synth::SaveProjectFileAt(seven.string(), project) == synth::ProjectResult::Ok);
+  CHECK(synth::SaveProjectFileAtVersionForTest(seven.string(), project, 7) == synth::ProjectResult::Ok);
   const std::string sevenText = ReadText(seven);
   CHECK(sevenText.rfind("CARDENZA_PROJECT 7\n", 0) == 0);
   CHECK(sevenText.find("\nT 1 0 110 24 1 0 16\nNOTES 3\n0 0 60 100 24 0\n0 0 62 90 24 0\n0 5 64 80 48 3\n") != std::string::npos);
@@ -461,9 +460,16 @@ void TestFormat()
   CHECK(LoadedHits(loaded, 0, 60) == 1 && LoadedHits(loaded, 5, 64) == 1 && loaded.sequence->tracks[0].defaultHits == 1);
   // Written again it is the same file: format 7 reads and writes exactly as before.
   const auto again = projectDirectory / "again.ccproj";
-  CHECK(synth::SaveProjectFileAt(again.string(), loaded) == synth::ProjectResult::Ok && ReadText(again) == sevenText);
-  // Hits are no part of the format-7 fingerprint (they are not in the file).
-  CHECK(synth::ProjectFingerprint(project) == synth::ProjectFingerprint(loaded));
+  CHECK(synth::SaveProjectFileAtVersionForTest(again.string(), loaded, 7) == synth::ProjectResult::Ok && ReadText(again) == sevenText);
+  // A HITS-only edit must change the fingerprint, so the autosave writes it too.
+  const auto fingerprint = synth::ProjectFingerprint(project);
+  CHECK(fingerprint != synth::ProjectFingerprint(loaded));
+  auto edited = HitsProject();
+  edited.sequence->tracks[0].patterns[0].steps.Edit(0).notes[0] = NoteEvent{60, 100, kStep, 0, true, 2};
+  CHECK(fingerprint != synth::ProjectFingerprint(edited));
+  edited.sequence->tracks[0].patterns[0].steps.Edit(0).notes[0] = NoteEvent{60, 100, kStep, 0, true, 3};
+  edited.sequence->tracks[0].defaultHits = 3;
+  CHECK(fingerprint != synth::ProjectFingerprint(edited));
 
   // Format 8, crafted from the format-7 file: NEW HITS after the new-note length on each T line, the
   // hits a seventh number on each note line.
@@ -490,10 +496,14 @@ void TestFormat()
   CHECK(synth::LoadProjectFileAt(eight.string(), loaded) == synth::ProjectResult::Ok);
   CHECK(LoadedHits(loaded, 0, 60) == 3 && LoadedHits(loaded, 0, 62) == 1 && LoadedHits(loaded, 5, 64) == 4);
   CHECK(loaded.sequence->tracks[0].defaultHits == 2 && loaded.sequence->tracks[1].defaultHits == 1);
-  // The writer behind the bump writes exactly that file.
+  // The normal project/autosave writer preserves the hits and matches the independent fixture.
   const auto written = projectDirectory / "written8.ccproj";
-  CHECK(synth::SaveProjectFileAtVersionForTest(written.string(), project, 8) == synth::ProjectResult::Ok);
+  CHECK(synth::SaveProjectFileAt(written.string(), project) == synth::ProjectResult::Ok);
   CHECK(ReadText(written) == crafted);
+  CHECK(synth::LoadProjectFileAt(written.string(), loaded) == synth::ProjectResult::Ok);
+  CHECK(LoadedHits(loaded, 0, 60) == 3 && LoadedHits(loaded, 0, 62) == 1 && LoadedHits(loaded, 5, 64) == 4);
+  CHECK(loaded.sequence->tracks[0].defaultHits == 2 && synth::ProjectFingerprint(loaded) == fingerprint);
+  CHECK(synth::SaveProjectFileAt(again.string(), loaded) == synth::ProjectResult::Ok && ReadText(again) == crafted);
   // Hits out of range are refused, as any value out of range.
   std::string bad = crafted;
   bad.replace(bad.find("0 5 64 80 48 3 4"), 16, "0 5 64 80 48 3 5");
