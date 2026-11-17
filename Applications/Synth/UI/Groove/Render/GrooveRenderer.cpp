@@ -905,6 +905,25 @@ render::PageTabsLayout render::DrawPageTabs(Gfx& g, const Controller& controller
       right -= Gfx::Measure(pages, style.font) + style.patternCounterGap;
     }
   }
+  // SONG: show the cursor's position and which side has hidden arrangement rows.
+  // Use the shared style so the compact display and native touch layout reserve the same space.
+  if (state.scene == Scene::Tape && current == kTapeSong)
+  {
+    const std::size_t length = controller.HostView().Sequencer().SongLength();
+    const std::size_t columns = std::min(length + 1, synth::kSongMaxRows);
+    if (columns > kGridColumns)
+    {
+      const std::string at = state.songRow < length ? std::to_string(state.songRow + 1) : "+";
+      const std::string where = at + "/" + std::to_string(length);
+      int x = style.right - Gfx::Measure(">", style.font);
+      g.Text(x, style.y, ">", state.songScroll + kGridColumns < columns ? kInk : kFaint, style.font);
+      x -= Gfx::Measure(where, style.font) + 3;
+      g.Text(x, style.y, where, kDim, style.font);
+      x -= Gfx::Measure("<", style.font) + 3;
+      g.Text(x, style.y, "<", state.songScroll > 0 ? kInk : kFaint, style.font);
+      right = x - style.patternCounterGap;
+    }
+  }
   if (total > right - left)
   {
     char counter[24];

@@ -1087,7 +1087,9 @@ void Controller::Adjust(int delta, bool coarse)
     case Scene::Tape:
       // ADD is the upper key: up the list, as everywhere (AdjustKeysMean).
       if (CurrentPage() == kTapeSession) SessionAdjust(-delta);
-      else if (CurrentPage() == kTapeSong) SongAdjust(delta, coarse);
+      // SONG: FN + ADD / SUB walk the columns (the song's rows), the view following; the bars of a row
+      // are its second lane (tap the cell again).
+      else if (CurrentPage() == kTapeSong) { if (coarse) SongArrow(delta, 0); else SongAdjust(delta, false); }
       else if (CurrentPage() == kTapeMix) MixAdjust(delta, coarse);
       else if (CurrentPage() == kTapeSends) SendsAdjust(delta, coarse);
       else FxAdjust(delta, coarse);
@@ -1132,6 +1134,7 @@ AdjustMeaning Controller::AdjustKeysMean() const
       if (CurrentPage() == 0 && !host_.Sequencer().HasHeldSteps() && !PadEditHeld()) return AdjustMeaning::Sideways;
       return AdjustMeaning::Value;
     case Scene::Tape:
+      if (CurrentPage() == kTapeSong && state_.left[LeftIndex(KeyRole::Fn)].down) return AdjustMeaning::Sideways;
       return CurrentPage() == kTapeSession ? AdjustMeaning::List : AdjustMeaning::Value;
     case Scene::Setup:
     default:

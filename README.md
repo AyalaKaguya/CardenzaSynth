@@ -63,3 +63,11 @@ make web-serve
 - [ESP-Mosaico 原生界面与业务分层](Devices/MosaicoNative/README.md)
 - [开发规则与设计](AGENT.md)
 - [Demo 生成工具](tools/demo/README.md)
+
+## 致谢
+
+- **[M5Stack Cardputer](https://docs.m5stack.com/en/core/Cardputer)**：一个很棒的项目。它是鸣片的灵感来源，也是我们动手做鸣片的初衷，谢谢 M5Stack 团队。鸣片不兼容 M5Stack 的设备，这里的固件也只为鸣片构建。
+- **[AMY](https://github.com/shorepine/amy)**（Brian Whitman 与 Daniel PW Ellis，MIT）：四种音源背后的合成引擎。我们在它之上维护分支 [203-Systems/amy](https://github.com/203-Systems/amy)。
+- **[ESP-IDF](https://github.com/espressif/esp-idf)** 与 **[TinyUSB](https://github.com/hathach/tinyusb)**：固件和 USB 所基于的框架。
+- **[Emscripten](https://emscripten.org)**：让同一份代码在浏览器里运行，网页模拟器靠它。
+- **[Docusaurus](https://docusaurus.io)**：教程与手册网站。

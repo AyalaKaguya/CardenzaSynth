@@ -8,14 +8,38 @@
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
       ]
     },
     {
       "source": "/deployment.json",
       "headers": [
-        { "key": "Cache-Control", "value": "no-store" }
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
       ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/community",
+      "destination": "https://apps.203.io/community/"
+    },
+    {
+      "source": "/community/",
+      "destination": "https://apps.203.io/community/"
+    },
+    {
+      "source": "/community/:path*/",
+      "destination": "https://apps.203.io/community/:path*/"
+    },
+    {
+      "source": "/community/:path*",
+      "destination": "https://apps.203.io/community/:path*"
     }
   ]
 }

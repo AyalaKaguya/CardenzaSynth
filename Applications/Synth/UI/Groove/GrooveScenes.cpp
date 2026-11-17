@@ -1853,7 +1853,8 @@ std::vector<Controller::FnEntry> Controller::FnEntries() const
       {"6/Y", "BPM+-", true},
       {"7/U", "VOL+-", true},
       {"8/I", "OCT+-", true},
-      {"+-", state_.scene == Scene::Sequence && CurrentPage() == 0 && !host_.Sequencer().HasHeldSteps() ? "PATTERN" : "BIG STEP", true},
+      {"+-", state_.scene == Scene::Sequence && CurrentPage() == 0 && !host_.Sequencer().HasHeldSteps() ? "PATTERN"
+                 : SongPage() ? "COLUMNS" : "BIG STEP", true},
       {"CTRL", "PREV PAGE", PageCount(state_.scene) > 1},
       {"TAB", "PREV TRK", true},
       {"ESC", "STOP", true},

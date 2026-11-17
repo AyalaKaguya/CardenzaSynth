@@ -626,6 +626,18 @@ void TestTape(Harness& h)
   assert(sequencer.SongLength() == 3);
   h.Chord(kFn, Key{2, 4});  // D
   assert(sequencer.SongLength() == 4);
+  // More columns than the GRID's four: FN + ADD / SUB walk the columns and the view follows (walking
+  // appends nothing); the empty column comes into view at the end and a tap there appends.
+  assert(h.State().songScroll == 0);
+  for (int step = 0; step < 6; ++step) h.Chord(kFn, kAdd);
+  assert(h.State().songRow == 4 && h.State().songScroll == 1 && sequencer.SongLength() == 4);
+  h.Tap(Grid(3));                     // the empty column, now the GRID's last: appends row 5
+  assert(sequencer.SongLength() == 5 && h.State().songRow == 4 && h.State().songScroll == 1);
+  h.Chord(kFn, kAdd);
+  assert(h.State().songRow == 5 && h.State().songScroll == 2);
+  for (int step = 0; step < 5; ++step) h.Chord(kFn, kSub);
+  assert(h.State().songRow == 0 && h.State().songScroll == 0);
+  h.Tap(Grid(2));
   // Lights: the cursor cell shimmers at focus level, empty columns stay dark.
   std::array<std::uint8_t, groove::kKeyCount> levels{};
   h.App().Ui().ComputeLeds(levels);
